@@ -1,0 +1,38 @@
+# Core AI
+anthropic==0.40.0
+
+# Exchange
+python-binance==1.0.19
+
+# Database
+redis==5.0.1
+
+# API Framework
+fastapi==0.109.0
+uvicorn==0.27.0
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# Data Analysis
+pandas==2.1.4
+numpy==1.26.3
+ta==0.11.0
+
+# Notifications
+python-telegram-bot==20.7
+
+# HTTP
+aiohttp==3.9.1
+
+# Configuration
+python-dotenv==1.0.0
+
+# Logging
+loguru==0.7.2
+
+# Testing
+pytest==7.4.4
+pytest-asyncio==0.23.3
+
+# WebSocket
+websockets==12.0

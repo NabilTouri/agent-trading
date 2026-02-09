@@ -1,0 +1,81 @@
+version: '3.9'
+
+services:
+  redis:
+    image: redis:7.2-alpine
+    container_name: trading-redis
+    command: redis-server --appendonly yes --maxmemory 400mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trading-bot
+    env_file: .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    command: python bot/main.py
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trading-api
+    env_file: .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    container_name: trading-dashboard
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  backup-cron:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trading-backup
+    env_file: .env
+    depends_on:
+      - redis
+    volumes:
+      - ./backups:/app/backups
+    restart: unless-stopped
+    command: python -m services.backup_service
+
+volumes:
+  redis-data:
+    driver: local
+
+networks:
+  default:
+    name: trading-network
