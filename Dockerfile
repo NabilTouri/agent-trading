@@ -19,5 +19,6 @@ COPY . .
 RUN mkdir -p /app/logs
 
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
 
 CMD ["python", "bot/main.py"]

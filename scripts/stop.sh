@@ -36,7 +36,7 @@ fi
 
 echo -e "${BOLD}"
 echo "╔═══════════════════════════════════════════════╗"
-echo "║       🛑 AI TRADING BOT — STOP               ║"
+echo "║       🛑 AI TRADING BOT — STOP                ║"
 echo "╚═══════════════════════════════════════════════╝"
 echo -e "${NC}"
 

@@ -32,7 +32,7 @@ fi
 
 echo -e "${RED}${BOLD}"
 echo "╔═══════════════════════════════════════════════╗"
-echo "║     🚨 EMERGENCY STOP — AI TRADING BOT       ║"
+echo "║     🚨 EMERGENCY STOP — AI TRADING BOT        ║"
 echo "╚═══════════════════════════════════════════════╝"
 echo -e "${NC}"
 echo -e "${RED}This will:${NC}"

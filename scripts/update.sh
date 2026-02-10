@@ -35,7 +35,7 @@ fi
 
 echo -e "${BOLD}"
 echo "╔═══════════════════════════════════════════════╗"
-echo "║       🔄 AI TRADING BOT — QUICK UPDATE       ║"
+echo "║       🔄 AI TRADING BOT — QUICK UPDATE        ║"
 echo "╚═══════════════════════════════════════════════╝"
 echo -e "${NC}"
 echo "📅 $(date '+%Y-%m-%d %H:%M:%S')"

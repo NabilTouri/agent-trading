@@ -31,7 +31,7 @@ ERRORS=0
 # ==== BANNER ====
 echo -e "${BOLD}"
 echo "╔═══════════════════════════════════════════════╗"
-echo "║       🤖 AI TRADING BOT — FULL DEPLOY        ║"
+echo "║       🤖 AI TRADING BOT — FULL DEPLOY         ║"
 echo "╚═══════════════════════════════════════════════╝"
 echo -e "${NC}"
 echo "📅 $(date '+%Y-%m-%d %H:%M:%S')"
