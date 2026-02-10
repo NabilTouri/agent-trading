@@ -148,7 +148,7 @@ class StrategyLoop:
         emoji = "🟢" if signal.action == ActionType.BUY else "🔴"
         
         message = f"""
-{emoji} <b>SIGNAL: {signal.action.value}</b>
+{emoji} <b>SIGNAL: {signal.action}</b>
 
 Pair: {signal.pair}
 Confidence: {signal.confidence}%
