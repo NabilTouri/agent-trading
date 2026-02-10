@@ -249,9 +249,9 @@ Confidence: {signal.confidence}%
             # Remove position from active
             db.close_position(position.position_id)
             
-            # Update capital
-            new_capital = db.get_current_capital() + pnl_net
-            db.update_capital(new_capital)
+            # Get updated balance from broker
+            new_balance = exchange.get_account_balance()
+            db.save_daily_snapshot(new_balance)
             
             emoji = "💰" if pnl_net > 0 else "📉"
             logger.success(f"{emoji} Position closed: PnL ${pnl_net:.2f} ({pnl_percent:+.2f}%)")
@@ -268,7 +268,7 @@ PnL: <b>${pnl_net:.2f}</b> ({pnl_percent:+.2f}%)
 Duration: {int(duration)} min
 Reason: {reason}
 
-New Balance: ${new_capital:.2f}
+Balance: ${new_balance:.2f}
 """)
         
         except Exception as e:

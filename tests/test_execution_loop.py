@@ -203,13 +203,13 @@ class TestExecutionLoop:
                 signal_id="sig_1",
             )
             mock_ex.close_position.return_value = True
-            mock_db.get_current_capital.return_value = 3000.0
+            mock_ex.get_account_balance.return_value = 3002.0
 
             await loop.close_position(pos, exit_price=51000.0, reason="TP")
 
             mock_db.save_trade.assert_called_once()
             mock_db.close_position.assert_called_once_with(pos.position_id)
-            mock_db.update_capital.assert_called_once()
+            mock_db.save_daily_snapshot.assert_called_once_with(3002.0)
 
     @pytest.mark.asyncio
     async def test_close_position_short_profit(self):
@@ -234,7 +234,7 @@ class TestExecutionLoop:
                 signal_id="sig_1",
             )
             mock_ex.close_position.return_value = True
-            mock_db.get_current_capital.return_value = 3000.0
+            mock_ex.get_account_balance.return_value = 3002.0
 
             await loop.close_position(pos, exit_price=49000.0, reason="TP")
 
@@ -270,7 +270,7 @@ class TestExecutionLoop:
             mock_db.get_all_open_positions.return_value = [pos]
             mock_ex.get_current_price.return_value = 48500.0  # below SL
             mock_ex.close_position.return_value = True
-            mock_db.get_current_capital.return_value = 3000.0
+            mock_ex.get_account_balance.return_value = 2997.0
             mock_db.get_latest_signal.return_value = None
 
             await loop.monitor_positions()
@@ -303,7 +303,7 @@ class TestExecutionLoop:
             mock_db.get_all_open_positions.return_value = [pos]
             mock_ex.get_current_price.return_value = 52500.0  # above TP
             mock_ex.close_position.return_value = True
-            mock_db.get_current_capital.return_value = 3000.0
+            mock_ex.get_account_balance.return_value = 3005.0
             mock_db.get_latest_signal.return_value = None
 
             await loop.monitor_positions()

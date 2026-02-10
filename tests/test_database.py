@@ -183,22 +183,41 @@ class TestRedisManager:
         assert len(result) == 1
         assert result[0]["open"] == 50000
 
-    # ── Capital / Metrics ────────────────────────────────────
+    # ── Capital ───────────────────────────────────────────────
 
-    def test_update_and_get_capital(self):
+    def test_save_initial_capital_first_time(self):
         mgr = self._make_db()
-        mgr.update_capital(3500.0)
-        mgr.client.set.assert_called_with("capital:current", 3500.0)
+        mgr.client.exists.return_value = False
+        mgr.save_initial_capital(5000.0)
+        mgr.client.set.assert_called_with("capital:initial", 5000.0)
 
-        mgr.client.get.return_value = "3500.0"
-        assert mgr.get_current_capital() == 3500.0
+    def test_save_initial_capital_already_set(self):
+        mgr = self._make_db()
+        mgr.client.exists.return_value = True
+        mgr.client.get.return_value = "3000.0"
+        mgr.save_initial_capital(5000.0)
+        # Should NOT overwrite
+        mgr.client.set.assert_not_called()
 
-    def test_get_capital_default(self):
+    def test_get_initial_capital(self):
+        mgr = self._make_db()
+        mgr.client.get.return_value = "5000.0"
+        assert mgr.get_initial_capital() == 5000.0
+
+    def test_get_initial_capital_not_set(self):
         mgr = self._make_db()
         mgr.client.get.return_value = None
-        # Should return initial_capital from settings
-        capital = mgr.get_current_capital()
-        assert capital > 0  # Should be the default (3000.0)
+        assert mgr.get_initial_capital() == 0.0
+
+    def test_reset_initial_capital(self):
+        mgr = self._make_db()
+        mgr.reset_initial_capital(4500.0)
+        mgr.client.set.assert_called_with("capital:initial", 4500.0)
+
+    def test_save_daily_snapshot(self):
+        mgr = self._make_db()
+        mgr.save_daily_snapshot(4800.0)
+        mgr.client.hset.assert_called_once()
 
     def test_calculate_metrics_no_trades(self):
         mgr = self._make_db()

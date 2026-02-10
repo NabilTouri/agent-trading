@@ -128,19 +128,31 @@ class RedisManager:
         data = self.client.lrange(key, 0, limit - 1)
         return [json.loads(d) for d in data]
     
-    # === METRICS ===
-    def update_capital(self, new_capital: float) -> None:
-        """Update current capital."""
-        self.client.set("capital:current", new_capital)
-        
-        # Daily capital snapshot
-        date_key = datetime.now().strftime("%Y-%m-%d")
-        self.client.hset("capital:daily", date_key, new_capital)
+    # === CAPITAL ===
+    def save_initial_capital(self, amount: float) -> None:
+        """Save initial capital (only if not already set)."""
+        if not self.client.exists("capital:initial"):
+            self.client.set("capital:initial", amount)
+            logger.info(f"Initial capital saved: ${amount:.2f}")
+        else:
+            logger.info(f"Initial capital already set: ${self.get_initial_capital():.2f}")
     
-    def get_current_capital(self) -> float:
-        """Get current capital."""
-        capital = self.client.get("capital:current")
-        return float(capital) if capital else settings.initial_capital
+    def get_initial_capital(self) -> float:
+        """Get initial capital from Redis."""
+        capital = self.client.get("capital:initial")
+        return float(capital) if capital else 0.0
+    
+    def reset_initial_capital(self, amount: float) -> None:
+        """Force-reset initial capital (used by /reset-capital endpoint)."""
+        self.client.set("capital:initial", amount)
+        logger.info(f"Initial capital reset to: ${amount:.2f}")
+    
+    def save_daily_snapshot(self, capital: float) -> None:
+        """Save daily capital snapshot for tracking."""
+        date_key = datetime.now().strftime("%Y-%m-%d")
+        self.client.hset("capital:daily", date_key, capital)
+    
+    # === METRICS ===
     
     def calculate_metrics(self) -> Dict[str, Any]:
         """Calculate performance metrics."""

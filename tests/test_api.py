@@ -18,7 +18,7 @@ def client():
 
         # Configure mock DB
         mock_db = MagicMock()
-        mock_db.get_current_capital.return_value = 3000.0
+        mock_db.get_initial_capital.return_value = 3000.0
         mock_db.get_all_open_positions.return_value = []
         mock_db.calculate_metrics.return_value = {
             "total_trades": 10,
@@ -53,14 +53,12 @@ def client():
              patch("api.routes.control.exchange", mock_exchange), \
              patch("api.routes.control.settings") as mock_ctrl_settings:
 
-            mock_settings.initial_capital = 3000.0
             mock_settings.risk_per_trade = 0.02
             mock_settings.max_drawdown = 0.20
             mock_settings.pairs_list = ["BTC/USDT", "ETH/USDT"]
             mock_settings.binance_testnet = True
             mock_settings.max_positions = 3
             mock_signals_settings.pairs_list = ["BTC/USDT", "ETH/USDT"]
-            mock_ctrl_settings.initial_capital = 3000.0
 
             from fastapi.testclient import TestClient
             from api.main import app

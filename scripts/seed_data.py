@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Seed Data Script
-Populates Redis with initial data for testing.
+Populates Redis with initial data from broker.
 """
 
 import sys
@@ -10,21 +10,25 @@ sys.path.insert(0, '/app')
 from loguru import logger
 from core.config import settings
 from core.database import db
+from core.exchange import exchange
 
 
 def main():
-    """Seed initial data."""
+    """Seed initial data from broker."""
     logger.info("=" * 50)
     logger.info("SEED DATA")
     logger.info("=" * 50)
     
-    # Initialize capital
-    logger.info(f"Setting initial capital: ${settings.initial_capital}")
-    db.update_capital(settings.initial_capital)
+    # Get balance from broker
+    broker_balance = exchange.get_account_balance()
+    logger.info(f"Broker balance: ${broker_balance:.2f}")
+    
+    # Save as initial capital
+    db.save_initial_capital(broker_balance)
     
     # Verify
-    capital = db.get_current_capital()
-    logger.success(f"✅ Capital set to: ${capital}")
+    initial = db.get_initial_capital()
+    logger.success(f"✅ Initial capital set to: ${initial:.2f}")
     
     logger.info("=" * 50)
     logger.success("Data seeding complete!")

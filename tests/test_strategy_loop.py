@@ -17,14 +17,15 @@ class TestStrategyLoop:
         """Drawdown should be 0 when capital >= initial."""
         with patch("bot.strategy_loop.settings") as mock_s, \
              patch("bot.strategy_loop.db") as mock_db, \
+             patch("bot.strategy_loop.exchange") as mock_ex, \
              patch("bot.strategy_loop.MarketAnalysisAgent"), \
              patch("bot.strategy_loop.RiskManagementAgent"), \
              patch("bot.strategy_loop.OrchestratorAgent"), \
              patch("bot.strategy_loop.DataPipeline"), \
              patch("bot.strategy_loop.telegram_notifier"):
             mock_s.strategy_interval_minutes = 30
-            mock_s.initial_capital = 3000.0
-            mock_db.get_current_capital.return_value = 3500.0
+            mock_db.get_initial_capital.return_value = 3000.0
+            mock_ex.get_account_balance.return_value = 3500.0
 
             from bot.strategy_loop import StrategyLoop
             loop = StrategyLoop()
@@ -34,14 +35,15 @@ class TestStrategyLoop:
         """Drawdown should be % loss from initial capital."""
         with patch("bot.strategy_loop.settings") as mock_s, \
              patch("bot.strategy_loop.db") as mock_db, \
+             patch("bot.strategy_loop.exchange") as mock_ex, \
              patch("bot.strategy_loop.MarketAnalysisAgent"), \
              patch("bot.strategy_loop.RiskManagementAgent"), \
              patch("bot.strategy_loop.OrchestratorAgent"), \
              patch("bot.strategy_loop.DataPipeline"), \
              patch("bot.strategy_loop.telegram_notifier"):
             mock_s.strategy_interval_minutes = 30
-            mock_s.initial_capital = 3000.0
-            mock_db.get_current_capital.return_value = 2700.0  # 10% loss
+            mock_db.get_initial_capital.return_value = 3000.0
+            mock_ex.get_account_balance.return_value = 2700.0  # 10% loss
 
             from bot.strategy_loop import StrategyLoop
             loop = StrategyLoop()
@@ -55,6 +57,7 @@ class TestStrategyLoop:
         """Should run market → risk → orchestrator → save signal."""
         with patch("bot.strategy_loop.settings") as mock_s, \
              patch("bot.strategy_loop.db") as mock_db, \
+             patch("bot.strategy_loop.exchange") as mock_ex, \
              patch("bot.strategy_loop.MarketAnalysisAgent") as MockMA, \
              patch("bot.strategy_loop.RiskManagementAgent") as MockRM, \
              patch("bot.strategy_loop.OrchestratorAgent") as MockOrch, \
@@ -62,7 +65,6 @@ class TestStrategyLoop:
              patch("bot.strategy_loop.telegram_notifier") as mock_tg:
 
             mock_s.strategy_interval_minutes = 30
-            mock_s.initial_capital = 3000.0
 
             # Pipeline mock
             mock_dp = MockDP.return_value
@@ -86,7 +88,8 @@ class TestStrategyLoop:
             }
 
             # DB mocks
-            mock_db.get_current_capital.return_value = 3000.0
+            mock_db.get_initial_capital.return_value = 3000.0
+            mock_ex.get_account_balance.return_value = 3000.0
             mock_db.get_all_open_positions.return_value = []
             mock_db.calculate_metrics.return_value = {
                 "win_rate": 60.0, "avg_profit": 5.0, "avg_loss": 3.0
@@ -109,6 +112,7 @@ class TestStrategyLoop:
         """HOLD signal should NOT trigger Telegram notification."""
         with patch("bot.strategy_loop.settings") as mock_s, \
              patch("bot.strategy_loop.db") as mock_db, \
+             patch("bot.strategy_loop.exchange") as mock_ex, \
              patch("bot.strategy_loop.MarketAnalysisAgent") as MockMA, \
              patch("bot.strategy_loop.RiskManagementAgent") as MockRM, \
              patch("bot.strategy_loop.OrchestratorAgent") as MockOrch, \
@@ -116,7 +120,6 @@ class TestStrategyLoop:
              patch("bot.strategy_loop.telegram_notifier") as mock_tg:
 
             mock_s.strategy_interval_minutes = 30
-            mock_s.initial_capital = 3000.0
 
             mock_dp = MockDP.return_value
             mock_dp.fetch_market_data = AsyncMock(return_value={
@@ -137,7 +140,8 @@ class TestStrategyLoop:
                 "reasoning": "no signal", "risk_level": "HIGH"
             }
 
-            mock_db.get_current_capital.return_value = 3000.0
+            mock_db.get_initial_capital.return_value = 3000.0
+            mock_ex.get_account_balance.return_value = 3000.0
             mock_db.get_all_open_positions.return_value = []
             mock_db.calculate_metrics.return_value = {
                 "win_rate": 50.0, "avg_profit": 0.0, "avg_loss": 0.0
@@ -158,6 +162,7 @@ class TestStrategyLoop:
         """Should send buy notification with green emoji."""
         with patch("bot.strategy_loop.settings") as mock_s, \
              patch("bot.strategy_loop.db"), \
+             patch("bot.strategy_loop.exchange"), \
              patch("bot.strategy_loop.MarketAnalysisAgent"), \
              patch("bot.strategy_loop.RiskManagementAgent"), \
              patch("bot.strategy_loop.OrchestratorAgent"), \
@@ -165,7 +170,6 @@ class TestStrategyLoop:
              patch("bot.strategy_loop.telegram_notifier") as mock_tg:
 
             mock_s.strategy_interval_minutes = 30
-            mock_s.initial_capital = 3000.0
             mock_tg.send_message = AsyncMock()
 
             from bot.strategy_loop import StrategyLoop

@@ -3,6 +3,7 @@ from loguru import logger
 from datetime import datetime
 from core.config import settings
 from core.database import db
+from core.exchange import exchange
 from core.models import Signal, ActionType
 from agents.market_analysis import MarketAnalysisAgent
 from agents.risk_management import RiskManagementAgent
@@ -135,10 +136,10 @@ class StrategyLoop:
     
     def _calculate_drawdown(self) -> float:
         """Calculate current drawdown percentage."""
-        current_capital = db.get_current_capital()
-        initial_capital = settings.initial_capital
+        current_capital = exchange.get_account_balance()
+        initial_capital = db.get_initial_capital()
         
-        if current_capital >= initial_capital:
+        if initial_capital == 0 or current_capital >= initial_capital:
             return 0.0
         
         return ((initial_capital - current_capital) / initial_capital) * 100

@@ -24,7 +24,6 @@ class Settings(BaseSettings):
     telegram_chat_id: str = ""
     
     # Trading
-    initial_capital: float = 3000.0
     risk_per_trade: float = 0.02
     max_positions: int = 3
     max_drawdown: float = 0.20

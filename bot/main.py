@@ -2,6 +2,8 @@ import asyncio
 import sys
 from loguru import logger
 from core.config import settings
+from core.database import db
+from core.exchange import exchange
 from bot.strategy_loop import StrategyLoop
 from bot.execution_loop import ExecutionLoop
 from services.telegram_bot import telegram_notifier
@@ -23,11 +25,19 @@ logger.add(
 
 async def main():
     """Main entry point for the trading bot."""
+    # Fetch real balance from broker
+    broker_balance = exchange.get_account_balance()
+    
+    # Save as initial capital if first run
+    db.save_initial_capital(broker_balance)
+    initial_capital = db.get_initial_capital()
+    
     logger.info("=" * 50)
     logger.info("AI TRADING BOT STARTING")
     logger.info(f"Mode: {'TESTNET' if settings.binance_testnet else 'MAINNET'}")
     logger.info(f"Trading Pairs: {settings.pairs_list}")
-    logger.info(f"Initial Capital: ${settings.initial_capital}")
+    logger.info(f"Broker Balance: ${broker_balance:.2f}")
+    logger.info(f"Initial Capital: ${initial_capital:.2f}")
     logger.info(f"Risk per Trade: {settings.risk_per_trade * 100}%")
     logger.info(f"Max Positions: {settings.max_positions}")
     logger.info("=" * 50)
@@ -38,7 +48,8 @@ async def main():
 
 Mode: {'TESTNET' if settings.binance_testnet else '⚠️ MAINNET'}
 Pairs: {', '.join(settings.pairs_list)}
-Capital: ${settings.initial_capital}
+Balance: ${broker_balance:.2f}
+Initial Capital: ${initial_capital:.2f}
 Risk/Trade: {settings.risk_per_trade * 100}%"""
     )
     

@@ -53,10 +53,11 @@ def resume_trading():
 
 @router.post("/reset-capital")
 def reset_capital():
-    """Reset capital to initial value."""
-    db.update_capital(settings.initial_capital)
-    logger.info(f"Capital reset to ${settings.initial_capital}")
+    """Reset initial capital to current broker balance."""
+    broker_balance = exchange.get_account_balance()
+    db.reset_initial_capital(broker_balance)
+    logger.info(f"Capital reset to broker balance: ${broker_balance:.2f}")
     return {
-        "message": "Capital reset",
-        "new_capital": settings.initial_capital
+        "message": "Capital reset to current broker balance",
+        "new_capital": broker_balance
     }

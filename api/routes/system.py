@@ -9,12 +9,17 @@ router = APIRouter()
 @router.get("/metrics")
 def get_system_metrics():
     """Get overall system metrics."""
+    current = exchange.get_account_balance()
+    initial = db.get_initial_capital()
+    pnl = current - initial if initial > 0 else 0
+    pnl_percent = (pnl / initial) * 100 if initial > 0 else 0
+    
     return {
         "capital": {
-            "current": db.get_current_capital(),
-            "initial": settings.initial_capital,
-            "pnl": db.get_current_capital() - settings.initial_capital,
-            "pnl_percent": ((db.get_current_capital() - settings.initial_capital) / settings.initial_capital) * 100
+            "current": current,
+            "initial": initial,
+            "pnl": round(pnl, 2),
+            "pnl_percent": round(pnl_percent, 2)
         },
         "performance": db.calculate_metrics(),
         "positions": {

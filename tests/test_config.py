@@ -20,7 +20,6 @@ class TestSettings:
         assert s.binance_testnet is True
         assert s.redis_host == "redis"
         assert s.redis_port == 6379
-        assert s.initial_capital == 3000.0
         assert s.risk_per_trade == 0.02
         assert s.max_positions == 3
         assert s.log_level == "INFO"
@@ -33,7 +32,6 @@ class TestSettings:
 
         env = {
             "BINANCE_TESTNET": "false",
-            "INITIAL_CAPITAL": "5000",
             "MAX_POSITIONS": "5",
             "TRADING_PAIRS": "SOL/USDT,DOGE/USDT",
         }
@@ -41,7 +39,6 @@ class TestSettings:
             s = Settings(_env_file=None)
 
         assert s.binance_testnet is False
-        assert s.initial_capital == 5000.0
         assert s.max_positions == 5
         assert s.trading_pairs == "SOL/USDT,DOGE/USDT"
 
