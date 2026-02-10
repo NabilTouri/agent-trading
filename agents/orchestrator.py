@@ -9,7 +9,7 @@ class OrchestratorAgent(BaseAgent):
     
     def __init__(self):
         # Phase 1: use Haiku for low cost
-        super().__init__(name="Orchestrator", model="claude-3-5-haiku-20241022")
+        super().__init__(name="Orchestrator", model="claude-3-5-haiku-latest")
     
     def get_system_prompt(self) -> str:
         prompt_path = os.path.join(os.path.dirname(__file__), "prompts", "orchestrator.txt")
