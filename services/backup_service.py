@@ -3,6 +3,7 @@ import os
 from datetime import datetime
 from loguru import logger
 from core.database import db
+from core.exchange import exchange
 from services.telegram_bot import telegram_notifier
 
 
@@ -45,7 +46,7 @@ class BackupService:
             
             # Create metrics backup
             metrics = db.calculate_metrics()
-            capital = db.get_current_capital()
+            capital = exchange.get_account_balance()
             positions = db.get_all_open_positions()
             
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

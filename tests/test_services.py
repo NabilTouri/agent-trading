@@ -78,6 +78,7 @@ class TestBackupService:
     async def test_create_backup(self):
         """Should trigger Redis save, get metrics, and send Telegram summary."""
         with patch("services.backup_service.db") as mock_db, \
+             patch("services.backup_service.exchange") as mock_ex, \
              patch("services.backup_service.telegram_notifier") as mock_tg:
 
             mock_db.client.save.return_value = True
@@ -86,7 +87,7 @@ class TestBackupService:
                 "win_rate": 65.0,
                 "total_pnl": 150.0,
             }
-            mock_db.get_current_capital.return_value = 3150.0
+            mock_ex.get_account_balance.return_value = 3150.0
             mock_db.get_all_open_positions.return_value = []
             mock_tg.send_message = AsyncMock()
 

@@ -67,7 +67,7 @@ class StrategyLoop:
                 **market_data,
                 'proposed_action': market_result.get('action', 'HOLD'),
                 'analysis_confidence': market_result.get('confidence', 0),
-                'account_balance': db.get_current_capital(),
+                'account_balance': exchange.get_account_balance(),
                 'open_positions_count': len(db.get_all_open_positions()),
                 'drawdown': self._calculate_drawdown(),
                 'win_rate': db.calculate_metrics()['win_rate'],
