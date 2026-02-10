@@ -140,6 +140,62 @@ docker-compose run --rm bot python scripts/setup_testnet.py
 
 ---
 
+## 🚀 Server Deployment Scripts
+
+Shell scripts per gestire il bot direttamente sul server (VPS Linux). Tutti in `scripts/`.
+
+> **Primo deploy**: rendi eseguibili con `chmod +x scripts/*.sh`
+
+### Scenari principali
+
+| Comando | Quando usarlo |
+|---------|---------------|
+| `./scripts/deploy.sh` | **Primo deploy** o deploy completo da zero |
+| `./scripts/update.sh` | **Dopo un push** alla repo (quick update, no test) |
+| `./scripts/stop.sh` | Fermare tutto in modo graceful |
+| `./scripts/emergency-stop.sh` | **Emergenza** — chiude posizioni + spegne tutto |
+
+### Operazioni quotidiane
+
+```bash
+# Status e health check di tutti i servizi
+./scripts/status.sh
+
+# Vedere i log del bot (follow in tempo reale)
+./scripts/logs.sh -f bot
+
+# Restart solo del bot dopo una modifica di config
+./scripts/restart.sh bot
+
+# Backup manuale Redis + Logs
+./scripts/backup.sh
+```
+
+### Update rapido (dopo git push)
+
+```bash
+# Update completo: pull → build → restart
+./scripts/update.sh
+
+# Update solo un servizio
+./scripts/update.sh --service bot
+
+# Solo restart, senza rebuild
+./scripts/update.sh --no-build
+```
+
+### Stop & Cleanup
+
+```bash
+# Stop graceful (mantiene dati)
+./scripts/stop.sh
+
+# Stop + rimuovi volumi e network
+./scripts/stop.sh --clean
+```
+
+---
+
 ## ⚠️ Production Checklist
 
 Before going live:
