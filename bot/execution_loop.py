@@ -11,34 +11,83 @@ from services.telegram_bot import telegram_notifier
 
 class ExecutionLoop:
     """Execution loop: every 10sec checks signals and executes trades."""
-    
+
     def __init__(self):
         self.interval = settings.execution_interval_seconds
+        self.consecutive_losses = 0
+        self.daily_trades_count = 0
+        self.last_reset_date = datetime.now().date()
+        self._paused = False
         logger.info(f"ExecutionLoop initialized (interval: {self.interval}s)")
-    
+
+    def _calculate_drawdown(self) -> float:
+        """Calculate current drawdown percentage."""
+        current_capital = exchange.get_account_balance()
+        initial_capital = db.get_initial_capital()
+
+        if initial_capital == 0 or current_capital >= initial_capital:
+            return 0.0
+
+        return ((initial_capital - current_capital) / initial_capital) * 100
+
     async def run(self):
         """Main loop."""
         # Initial delay
         await asyncio.sleep(10)
-        
+
         while True:
             try:
+                # Reset daily counter
+                if datetime.now().date() != self.last_reset_date:
+                    self.daily_trades_count = 0
+                    self.last_reset_date = datetime.now().date()
+
+                # CIRCUIT BREAKER 1: Max drawdown
+                drawdown = self._calculate_drawdown()
+                if drawdown > settings.max_drawdown * 100:  # 20%
+                    logger.critical(f"🚨 MAX DRAWDOWN REACHED: {drawdown:.1f}%")
+                    await telegram_notifier.send_message(
+                        "🚨 <b>EMERGENCY STOP</b>\n\n"
+                        f"Max drawdown exceeded: {drawdown:.1f}%\n"
+                        "Bot paused. Manual intervention required."
+                    )
+                    await asyncio.sleep(3600)  # Sleep 1h
+                    continue
+
+                # CIRCUIT BREAKER 2: Consecutive losses
+                if self.consecutive_losses >= 3:
+                    logger.warning("⚠️ 3 consecutive losses - cooling off 1h")
+                    await telegram_notifier.send_message(
+                        "⚠️ <b>COOLING OFF</b>\n\n"
+                        "3 consecutive losses detected.\n"
+                        "Pausing trading for 1 hour."
+                    )
+                    await asyncio.sleep(3600)
+                    self.consecutive_losses = 0
+                    continue
+
+                # CIRCUIT BREAKER 3: Daily trade limit
+                if self.daily_trades_count >= 10:
+                    logger.warning("⚠️ Daily trade limit reached (10)")
+                    await asyncio.sleep(300)
+                    continue
+
                 # 1. Check active signals
                 await self.check_signals()
-                
+
                 # 2. Monitor open positions (stop loss / take profit)
                 await self.monitor_positions()
-                
+
             except Exception as e:
                 logger.error(f"Execution loop error: {e}")
-            
+
             await asyncio.sleep(self.interval)
     
     async def check_signals(self):
         """Check recent signals and execute if valid."""
         for pair in settings.pairs_list:
             signal = db.get_latest_signal(pair)
-            
+
             if not signal:
                 continue
             
@@ -46,62 +95,79 @@ class ExecutionLoop:
             signal_age = (datetime.now() - signal.timestamp).total_seconds()
             if signal_age > 300:  # 5 minutes
                 continue
-            
+
             # Check if confidence is sufficient
             if signal.confidence < 60:
                 continue
-            
+
             # Check if action is BUY/SELL (not HOLD)
             if signal.action == ActionType.HOLD:
                 continue
-            
+
             # Check if position already open for this pair
             open_positions = db.get_all_open_positions()
             if any(p.pair == pair for p in open_positions):
                 logger.debug(f"Position already open for {pair}, skipping")
                 continue
-            
+
             # Check max positions
             if len(open_positions) >= settings.max_positions:
                 logger.warning(f"Max positions ({settings.max_positions}) reached")
                 continue
-            
+
             # EXECUTE TRADE
             await self.execute_signal(signal)
-    
+
     async def execute_signal(self, signal: Signal):
         """Execute signal by opening position."""
         try:
             logger.info(f"EXECUTING signal: {signal.action} {signal.pair}")
-            
+
             # Get data from signal
             position_size = signal.market_data.get('position_size', 0)
             stop_loss = signal.market_data.get('stop_loss', 0)
             take_profit = signal.market_data.get('take_profit', 0)
             current_price = exchange.get_current_price(signal.pair)
-            
+
             if position_size == 0:
                 logger.error("Position size is 0, aborting")
                 return
-            
+
             if current_price == 0:
                 logger.error("Could not get current price, aborting")
                 return
-            
+
+            # SLIPPAGE PROTECTION
+            expected_price = signal.market_data.get('price')
+            if expected_price and expected_price > 0:
+                slippage_pct = abs(current_price - expected_price) / expected_price * 100
+
+                if slippage_pct > 0.5:  # 0.5% max slippage
+                    logger.warning(
+                        f"⚠️ High slippage detected: {slippage_pct:.2f}% "
+                        f"(expected ${expected_price:.2f}, got ${current_price:.2f})"
+                    )
+                    await telegram_notifier.send_message(
+                        f"⚠️ <b>Trade aborted</b> — slippage too high: {slippage_pct:.2f}%\n"
+                        f"Expected: ${expected_price:.2f}\n"
+                        f"Current: ${current_price:.2f}"
+                    )
+                    return
+
             # Calculate quantity to buy
             quantity = position_size / current_price
-            
+
             # Determine side
             side = "BUY" if signal.action == ActionType.BUY else "SELL"
             position_side = "LONG" if signal.action == ActionType.BUY else "SHORT"
-            
+
             # Place market order
             order = exchange.place_market_order(signal.pair, side, quantity)
-            
+
             if not order:
                 logger.error("Order failed")
                 return
-            
+
             # Create Position object
             position = Position(
                 position_id=str(uuid.uuid4()),
@@ -115,15 +181,15 @@ class ExecutionLoop:
                 opened_at=datetime.now(),
                 signal_id=signal.signal_id
             )
-            
+
             # Save to DB
             db.save_position(position)
-            
+
             logger.success(
                 f"✅ Position opened: {position_side} {quantity:.6f} "
                 f"{signal.pair} @ ${current_price:.2f}"
             )
-            
+
             # Telegram notification
             await telegram_notifier.send_message(f"""
 ✅ <b>POSITION OPENED</b>
@@ -137,94 +203,102 @@ Take Profit: ${take_profit:.2f}
 
 Confidence: {signal.confidence}%
 """)
-        
+
         except Exception as e:
             logger.error(f"Error executing signal: {e}")
             import traceback
             traceback.print_exc()
-    
+
     async def monitor_positions(self):
         """Monitor open positions for stop loss / take profit."""
         positions = db.get_all_open_positions()
-        
+
         for position in positions:
             try:
                 current_price = exchange.get_current_price(position.pair)
-                
+
                 if current_price == 0:
                     continue
-                
+
                 should_close = False
                 exit_reason = None
-                
+
                 # Check Stop Loss
                 if position.side == "LONG" and current_price <= position.stop_loss:
                     should_close = True
                     exit_reason = "SL"
                     logger.warning(f"Stop Loss hit for {position.pair}")
-                
+
                 elif position.side == "SHORT" and current_price >= position.stop_loss:
                     should_close = True
                     exit_reason = "SL"
                     logger.warning(f"Stop Loss hit for {position.pair}")
-                
+
                 # Check Take Profit
                 if position.take_profit and position.take_profit > 0:
                     if position.side == "LONG" and current_price >= position.take_profit:
                         should_close = True
                         exit_reason = "TP"
                         logger.info(f"Take Profit hit for {position.pair}")
-                    
+
                     elif position.side == "SHORT" and current_price <= position.take_profit:
                         should_close = True
                         exit_reason = "TP"
                         logger.info(f"Take Profit hit for {position.pair}")
-                
+
                 # Check opposite signal
                 latest_signal = db.get_latest_signal(position.pair)
                 if latest_signal:
                     signal_age = (datetime.now() - latest_signal.timestamp).total_seconds()
-                    
+
                     if signal_age < 300 and latest_signal.confidence >= 60:
                         if (position.side == "LONG" and latest_signal.action == ActionType.SELL) or \
                            (position.side == "SHORT" and latest_signal.action == ActionType.BUY):
                             should_close = True
                             exit_reason = "SIGNAL"
                             logger.info(f"Opposite signal detected for {position.pair}")
-                
+
                 # CLOSE POSITION
                 if should_close and exit_reason:
                     await self.close_position(position, current_price, exit_reason)
-            
+
             except Exception as e:
                 logger.error(f"Error monitoring position {position.position_id}: {e}")
-    
+
     async def close_position(self, position: Position, exit_price: float, reason: str):
         """Close position and record trade."""
         try:
             logger.info(f"CLOSING position {position.pair} @ ${exit_price:.2f} (reason: {reason})")
-            
+
             # Close on exchange
             success = exchange.close_position(position.pair)
             if not success:
                 logger.error("Failed to close position on exchange")
                 return
-            
+
             # Calculate PnL
             if position.side == "LONG":
                 pnl = (exit_price - position.entry_price) * position.quantity
             else:  # SHORT
                 pnl = (position.entry_price - exit_price) * position.quantity
-            
+
             pnl_percent = (pnl / position.size) * 100 if position.size > 0 else 0
-            
+
             # Fees (estimated 0.04% taker)
             fees = position.size * 0.0004 * 2  # open + close
             pnl_net = pnl - fees
-            
+
+            # Track consecutive losses for circuit breaker
+            if pnl_net < 0:
+                self.consecutive_losses += 1
+            else:
+                self.consecutive_losses = 0
+
+            self.daily_trades_count += 1
+
             # Create Trade object
             duration = (datetime.now() - position.opened_at).total_seconds() / 60
-            
+
             trade = Trade(
                 trade_id=str(uuid.uuid4()),
                 position_id=position.position_id,
@@ -242,20 +316,20 @@ Confidence: {signal.confidence}%
                 duration_minutes=int(duration),
                 exit_reason=reason
             )
-            
+
             # Save trade
             db.save_trade(trade)
-            
+
             # Remove position from active
             db.close_position(position.position_id)
-            
+
             # Get updated balance from broker
             new_balance = exchange.get_account_balance()
             db.save_daily_snapshot(new_balance)
-            
+
             emoji = "💰" if pnl_net > 0 else "📉"
             logger.success(f"{emoji} Position closed: PnL ${pnl_net:.2f} ({pnl_percent:+.2f}%)")
-            
+
             # Telegram notification
             await telegram_notifier.send_message(f"""
 {emoji} <b>POSITION CLOSED</b>
@@ -268,9 +342,9 @@ PnL: <b>${pnl_net:.2f}</b> ({pnl_percent:+.2f}%)
 Duration: {int(duration)} min
 Reason: {reason}
 
-Balance: ${new_balance:.2f}
+New Balance: ${new_balance:.2f}
 """)
-        
+
         except Exception as e:
             logger.error(f"Error closing position: {e}")
             import traceback

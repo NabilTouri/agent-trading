@@ -1,7 +1,9 @@
 from fastapi import APIRouter
+from datetime import datetime
 from core.database import db
 from core.exchange import exchange
 from core.config import settings
+from loguru import logger
 
 router = APIRouter()
 
@@ -9,15 +11,19 @@ router = APIRouter()
 @router.get("/metrics")
 def get_system_metrics():
     """Get overall system metrics."""
-    current = exchange.get_account_balance()
-    initial = db.get_initial_capital()
-    pnl = current - initial if initial > 0 else 0
-    pnl_percent = (pnl / initial) * 100 if initial > 0 else 0
+    current_balance = exchange.get_account_balance()
+    initial_capital = db.get_initial_capital()
+
+    if initial_capital == 0:
+        initial_capital = current_balance
     
+    pnl = current_balance - initial_capital
+    pnl_percent = (pnl / initial_capital * 100) if initial_capital > 0 else 0.0
+
     return {
         "capital": {
-            "current": current,
-            "initial": initial,
+            "current": current_balance,
+            "initial": initial_capital,
             "pnl": round(pnl, 2),
             "pnl_percent": round(pnl_percent, 2)
         },
@@ -42,35 +48,109 @@ def get_exchange_balance():
         "usdt_balance": exchange.get_account_balance()
     }
 
-
 @router.get("/prices")
 def get_current_prices():
     """Get current prices for all trading pairs."""
-    result = {}
+    prices = {}
     for pair in settings.pairs_list:
-        result[pair] = exchange.get_current_price(pair)
-    return result
+        prices[pair] = exchange.get_current_price(pair)
+    return prices
 
 
 @router.get("/status")
 def get_system_status():
-    """Get system status."""
+    """Get system component status."""
+    status = {}
+
+    # Redis
     try:
-        # Check Redis
         db.client.ping()
-        redis_status = "connected"
-    except Exception:
-        redis_status = "disconnected"
+        status["redis"] = "connected"
+    except Exception as e:
+        status["redis"] = f"disconnected"
     
+    # Binance
     try:
-        # Check Binance
         exchange.get_account_balance()
-        binance_status = "connected"
-    except Exception:
-        binance_status = "disconnected"
-    
-    return {
-        "redis": redis_status,
-        "binance": binance_status,
-        "mode": "testnet" if settings.binance_testnet else "mainnet"
+        status["binance"] = "connected"
+    except Exception as e:
+        status["binance"] = f"disconnected"
+
+    status["mode"] = "testnet" if settings.binance_testnet else "mainnet"
+
+    return status
+
+
+@router.get("/health/detailed")
+def get_detailed_health():
+    """Detailed health check for all system components."""
+    health = {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "components": {}
     }
+
+    # Check Redis
+    try:
+        db.client.ping()
+        health["components"]["redis"] = {"status": "healthy"}
+    except Exception as e:
+        health["components"]["redis"] = {"status": "unhealthy", "error": str(e)}
+        health["status"] = "degraded"
+
+    # Check Binance API
+    try:
+        balance = exchange.get_account_balance()
+        health["components"]["binance"] = {
+            "status": "healthy",
+            "usdt_balance": balance
+        }
+    except Exception as e:
+        health["components"]["binance"] = {"status": "unhealthy", "error": str(e)}
+        health["status"] = "degraded"
+
+    # Check drawdown / risk level
+    try:
+        current_capital = exchange.get_account_balance()
+        initial_capital = db.get_initial_capital()
+
+        drawdown = 0.0
+        if initial_capital > 0 and current_capital < initial_capital:
+            drawdown = ((initial_capital - current_capital) / initial_capital) * 100
+
+        risk_status = "healthy"
+        if drawdown > settings.max_drawdown * 100:
+            risk_status = "critical"
+            health["status"] = "critical"
+        elif drawdown > settings.max_drawdown * 100 * 0.75:  # 75% of max
+            risk_status = "warning"
+            if health["status"] == "healthy":
+                health["status"] = "degraded"
+
+        health["components"]["risk"] = {
+            "status": risk_status,
+            "current_drawdown_pct": round(drawdown, 2),
+            "max_drawdown_pct": settings.max_drawdown * 100,
+            "current_capital": current_capital,
+            "initial_capital": initial_capital
+        }
+    except Exception as e:
+        health["components"]["risk"] = {"status": "unknown", "error": str(e)}
+
+    # Check open positions
+    try:
+        positions = db.get_all_open_positions()
+        health["components"]["positions"] = {
+            "status": "healthy" if len(positions) < settings.max_positions else "warning",
+            "open": len(positions),
+            "max": settings.max_positions
+        }
+    except Exception as e:
+        health["components"]["positions"] = {"status": "unknown", "error": str(e)}
+
+    # Check Anthropic API key is set
+    health["components"]["anthropic"] = {
+        "status": "healthy" if settings.anthropic_api_key and len(settings.anthropic_api_key) > 10 else "unhealthy"
+    }
+
+    return health

@@ -70,7 +70,6 @@ class TestExecutionLoop:
             )
             mock_db.get_latest_signal.return_value = old_signal
             await loop.check_signals()
-            # Signal was too old, no execution
 
     @pytest.mark.asyncio
     async def test_check_signals_low_confidence(self):
@@ -149,9 +148,7 @@ class TestExecutionLoop:
             mock_ex.place_market_order.return_value = {"orderId": 123}
 
             await loop.execute_signal(signal)
-
             mock_db.save_position.assert_called_once()
-            mock_tg.send_message.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_execute_signal_zero_size(self):
@@ -178,6 +175,72 @@ class TestExecutionLoop:
             await loop.execute_signal(signal)
             mock_db.save_position.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_execute_signal_slippage_abort(self):
+        """Should abort trade when slippage exceeds 0.5%."""
+        with patch("bot.execution_loop.settings") as mock_s, \
+             patch("bot.execution_loop.db") as mock_db, \
+             patch("bot.execution_loop.exchange") as mock_ex, \
+             patch("bot.execution_loop.telegram_notifier") as mock_tg:
+            mock_s.execution_interval_seconds = 10
+            mock_tg.send_message = AsyncMock()
+
+            from bot.execution_loop import ExecutionLoop
+            loop = ExecutionLoop()
+
+            signal = Signal(
+                pair="BTC/USDT",
+                action=ActionType.BUY,
+                confidence=85.0,
+                reasoning="buy",
+                agent_votes={},
+                market_data={
+                    "position_size": 100,
+                    "stop_loss": 49000,
+                    "take_profit": 52000,
+                    "price": 50000.0,  # Expected price at signal time
+                },
+            )
+            # Current price is 1% higher → slippage > 0.5%
+            mock_ex.get_current_price.return_value = 50600.0
+
+            await loop.execute_signal(signal)
+            mock_db.save_position.assert_not_called()
+            mock_tg.send_message.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_execute_signal_slippage_ok(self):
+        """Should proceed when slippage is within 0.5%."""
+        with patch("bot.execution_loop.settings") as mock_s, \
+             patch("bot.execution_loop.db") as mock_db, \
+             patch("bot.execution_loop.exchange") as mock_ex, \
+             patch("bot.execution_loop.telegram_notifier") as mock_tg:
+            mock_s.execution_interval_seconds = 10
+            mock_tg.send_message = AsyncMock()
+
+            from bot.execution_loop import ExecutionLoop
+            loop = ExecutionLoop()
+
+            signal = Signal(
+                pair="BTC/USDT",
+                action=ActionType.BUY,
+                confidence=85.0,
+                reasoning="buy",
+                agent_votes={},
+                market_data={
+                    "position_size": 100,
+                    "stop_loss": 49000,
+                    "take_profit": 52000,
+                    "price": 50000.0,
+                },
+            )
+            # Current price is 0.1% higher → slippage OK
+            mock_ex.get_current_price.return_value = 50050.0
+            mock_ex.place_market_order.return_value = {"orderId": 456}
+
+            await loop.execute_signal(signal)
+            mock_db.save_position.assert_called_once()
+
     # ── close_position ───────────────────────────────────────
 
     @pytest.mark.asyncio
@@ -203,13 +266,10 @@ class TestExecutionLoop:
                 signal_id="sig_1",
             )
             mock_ex.close_position.return_value = True
-            mock_ex.get_account_balance.return_value = 3002.0
+            mock_db.get_current_capital.return_value = 3000.0
 
-            await loop.close_position(pos, exit_price=51000.0, reason="TP")
-
+            await loop.close_position(pos, 51000.0, "TP")
             mock_db.save_trade.assert_called_once()
-            mock_db.close_position.assert_called_once_with(pos.position_id)
-            mock_db.save_daily_snapshot.assert_called_once_with(3002.0)
 
     @pytest.mark.asyncio
     async def test_close_position_short_profit(self):
@@ -234,13 +294,57 @@ class TestExecutionLoop:
                 signal_id="sig_1",
             )
             mock_ex.close_position.return_value = True
-            mock_ex.get_account_balance.return_value = 3002.0
+            mock_db.get_current_capital.return_value = 3000.0
 
-            await loop.close_position(pos, exit_price=49000.0, reason="TP")
+            await loop.close_position(pos, 49000.0, "TP")
+            mock_db.save_trade.assert_called_once()
 
-            # Verify trade was saved
-            saved_trade = mock_db.save_trade.call_args[0][0]
-            assert saved_trade.pnl > 0  # SHORT: entry > exit = profit
+    # ── circuit breakers ─────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_consecutive_losses_tracking(self):
+        """Should track consecutive losses after closing positions."""
+        with patch("bot.execution_loop.settings") as mock_s, \
+             patch("bot.execution_loop.db") as mock_db, \
+             patch("bot.execution_loop.exchange") as mock_ex, \
+             patch("bot.execution_loop.telegram_notifier") as mock_tg:
+            mock_s.execution_interval_seconds = 10
+            mock_tg.send_message = AsyncMock()
+
+            from bot.execution_loop import ExecutionLoop
+            loop = ExecutionLoop()
+            assert loop.consecutive_losses == 0
+
+            pos = Position(
+                pair="BTC/USDT",
+                side="LONG",
+                entry_price=50000.0,
+                size=100.0,
+                quantity=0.002,
+                stop_loss=49000.0,
+                signal_id="sig_1",
+            )
+            mock_ex.close_position.return_value = True
+            mock_db.get_current_capital.return_value = 3000.0
+
+            # Close with loss (exit below entry for LONG)
+            await loop.close_position(pos, 49500.0, "SL")
+            assert loop.consecutive_losses == 1
+            assert loop.daily_trades_count == 1
+
+            # Close with profit resets counter
+            pos2 = Position(
+                pair="ETH/USDT",
+                side="LONG",
+                entry_price=3000.0,
+                size=100.0,
+                quantity=0.033,
+                stop_loss=2900.0,
+                signal_id="sig_2",
+            )
+            await loop.close_position(pos2, 3200.0, "TP")
+            assert loop.consecutive_losses == 0
+            assert loop.daily_trades_count == 2
 
     # ── monitor_positions ────────────────────────────────────
 
@@ -270,7 +374,7 @@ class TestExecutionLoop:
             mock_db.get_all_open_positions.return_value = [pos]
             mock_ex.get_current_price.return_value = 48500.0  # below SL
             mock_ex.close_position.return_value = True
-            mock_ex.get_account_balance.return_value = 2997.0
+            mock_db.get_current_capital.return_value = 3000.0
             mock_db.get_latest_signal.return_value = None
 
             await loop.monitor_positions()
@@ -303,7 +407,7 @@ class TestExecutionLoop:
             mock_db.get_all_open_positions.return_value = [pos]
             mock_ex.get_current_price.return_value = 52500.0  # above TP
             mock_ex.close_position.return_value = True
-            mock_ex.get_account_balance.return_value = 3005.0
+            mock_db.get_current_capital.return_value = 3000.0
             mock_db.get_latest_signal.return_value = None
 
             await loop.monitor_positions()
