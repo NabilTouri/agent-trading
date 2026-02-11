@@ -80,11 +80,14 @@ async def reconcile_positions():
 
 async def main():
     """Main entry point for the trading bot."""
+    # Get current balance from Binance
+    current_balance = exchange.get_account_balance()
+
     logger.info("=" * 50)
     logger.info("AI TRADING BOT STARTING")
     logger.info(f"Mode: {'TESTNET' if settings.binance_testnet else 'MAINNET'}")
     logger.info(f"Trading Pairs: {settings.pairs_list}")
-    logger.info(f"Initial Capital: ${settings.initial_capital}")
+    logger.info(f"Current Balance: ${current_balance:.2f}")
     logger.info(f"Risk per Trade: {settings.risk_per_trade * 100}%")
     logger.info(f"Max Positions: {settings.max_positions}")
     logger.info("=" * 50)
@@ -95,7 +98,7 @@ async def main():
 
 Mode: {'TESTNET' if settings.binance_testnet else '⚠️ MAINNET'}
 Pairs: {', '.join(settings.pairs_list)}
-Capital: ${settings.initial_capital}
+Balance: ${current_balance:.2f}
 Risk/Trade: {settings.risk_per_trade * 100}%"""
     )
 
