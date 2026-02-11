@@ -7,6 +7,11 @@ class Settings(BaseSettings):
     
     # Anthropic
     anthropic_api_key: str = ""
+
+    # AI Models
+    orchestrator_model: str = "claude-3-haiku-20240307"
+    risk_management_model: str = "claude-3-haiku-20240307"
+    market_analysis_model: str = "claude-3-haiku-20240307"
     
     # Binance
     binance_api_key: str = ""

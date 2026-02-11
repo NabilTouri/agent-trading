@@ -2,13 +2,14 @@ from agents.base_agent import BaseAgent
 from typing import Dict, Any
 import json
 import os
+from core.config import settings
 
 
 class MarketAnalysisAgent(BaseAgent):
     """Technical analysis agent using Claude Sonnet."""
     
     def __init__(self):
-        super().__init__(name="MarketAnalysis", model="claude-sonnet-4-20250514")
+        super().__init__(name="MarketAnalysis", model=settings.market_analysis_model)
     
     def get_system_prompt(self) -> str:
         prompt_path = os.path.join(os.path.dirname(__file__), "prompts", "market_analysis.txt")

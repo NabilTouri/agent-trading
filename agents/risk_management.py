@@ -2,13 +2,14 @@ from agents.base_agent import BaseAgent
 from typing import Dict, Any
 import json
 import os
+from core.config import settings
 
 
 class RiskManagementAgent(BaseAgent):
     """Risk management agent using Claude Sonnet."""
     
     def __init__(self):
-        super().__init__(name="RiskManagement", model="claude-sonnet-4-20250514")
+        super().__init__(name="RiskManagement", model=settings.risk_management_model)
     
     def get_system_prompt(self) -> str:
         prompt_path = os.path.join(os.path.dirname(__file__), "prompts", "risk_management.txt")
