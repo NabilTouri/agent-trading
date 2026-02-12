@@ -79,7 +79,9 @@ class TestBackupService:
         """Should trigger Redis save, get metrics, and send Telegram summary."""
         with patch("services.backup_service.db") as mock_db, \
              patch("services.backup_service.exchange") as mock_ex, \
-             patch("services.backup_service.telegram_notifier") as mock_tg:
+             patch("services.backup_service.telegram_notifier") as mock_tg, \
+             patch("services.backup_service.settings") as mock_settings, \
+             patch("builtins.open", create=True) as mock_open:
 
             mock_db.client.save.return_value = True
             mock_db.calculate_metrics.return_value = {
@@ -88,7 +90,14 @@ class TestBackupService:
                 "total_pnl": 150.0,
             }
             mock_ex.get_account_balance.return_value = 3150.0
+            mock_db.get_initial_capital.return_value = 3000.0
             mock_db.get_all_open_positions.return_value = []
+            mock_db.get_trades_history.return_value = []
+            mock_db.get_signals_history.return_value = []
+            mock_settings.pairs_list = ["BTC/USDT", "ETH/USDT"]
+            mock_settings.risk_per_trade = 0.02
+            mock_settings.max_positions = 3
+            mock_settings.binance_testnet = True
             mock_tg.send_message = AsyncMock()
 
             from services.backup_service import BackupService

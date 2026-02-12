@@ -7,7 +7,7 @@ from core.database import db
 from core.exchange import exchange
 from core.config import settings
 from services.telegram_bot import telegram_notifier
-
+    
 
 class BackupService:
     """Daily backup of Redis to JSON files and Telegram."""
