@@ -3,8 +3,6 @@
 import { useQuery } from '@tanstack/react-query'
 import axios from 'axios'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-
 interface Metrics {
     capital: {
         current: number
@@ -51,7 +49,7 @@ export default function Dashboard() {
     const { data: metrics, isLoading: metricsLoading } = useQuery<Metrics>({
         queryKey: ['metrics'],
         queryFn: async () => {
-            const res = await axios.get(`${API_URL}/api/system/metrics`)
+            const res = await axios.get(`/api/system/metrics`)
             return res.data
         },
         refetchInterval: 5000,
@@ -60,7 +58,7 @@ export default function Dashboard() {
     const { data: positions, isLoading: positionsLoading } = useQuery<Position[]>({
         queryKey: ['positions'],
         queryFn: async () => {
-            const res = await axios.get(`${API_URL}/api/positions/current`)
+            const res = await axios.get(`/api/positions/current`)
             return res.data
         },
         refetchInterval: 5000,
@@ -69,7 +67,7 @@ export default function Dashboard() {
     const { data: signals, isLoading: signalsLoading } = useQuery<Signal[]>({
         queryKey: ['signals'],
         queryFn: async () => {
-            const res = await axios.get(`${API_URL}/api/signals/history?limit=10`)
+            const res = await axios.get(`/api/signals/history?limit=10`)
             return res.data
         },
         refetchInterval: 10000,
@@ -78,7 +76,7 @@ export default function Dashboard() {
     const { data: status } = useQuery({
         queryKey: ['status'],
         queryFn: async () => {
-            const res = await axios.get(`${API_URL}/api/system/status`)
+            const res = await axios.get(`/api/system/status`)
             return res.data
         },
         refetchInterval: 10000,
