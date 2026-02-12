@@ -63,5 +63,8 @@ backups/
 .DS_Store
 Thumbs.db
 
+# Claude Code temp files
+tmpclaude-*
+
 # Redis dumps
 dump.rdb
