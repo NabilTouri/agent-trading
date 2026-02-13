@@ -29,6 +29,10 @@ class TestBinanceExchangeWrapper:
             ex.client = MagicMock()
             ex.testnet = True
             ex.base_url = "https://testnet.binancefuture.com"
+            ex._symbol_info_cache = {
+                "BTCUSDT": {"quantity_precision": 3, "price_precision": 2, "step_size": 0.001},
+                "ETHUSDT": {"quantity_precision": 3, "price_precision": 2, "step_size": 0.001},
+            }
         return ex
 
     # ── Balance ──────────────────────────────────────────────

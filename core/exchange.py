@@ -4,12 +4,15 @@ from typing import Dict, List, Optional
 from loguru import logger
 from core.config import settings
 import time
+import math
 
 
 class BinanceExchangeWrapper:
     """Wrapper for Binance API with testnet/mainnet support."""
 
     def __init__(self):
+        self._symbol_info_cache: Dict[str, Dict] = {}
+
         if settings.binance_testnet:
             self.client = Client(
                 settings.binance_api_key,
@@ -23,6 +26,61 @@ class BinanceExchangeWrapper:
                 settings.binance_secret_key
             )
             logger.warning("⚠️ Binance MAINNET client initialized")
+
+        self._load_symbol_info()
+
+    def _load_symbol_info(self):
+        """Load and cache symbol precision info from Binance exchange info."""
+        try:
+            exchange_info = self.client.futures_exchange_info()
+            for s in exchange_info.get('symbols', []):
+                symbol = s['symbol']
+                qty_precision = s.get('quantityPrecision', 3)
+                price_precision = s.get('pricePrecision', 2)
+
+                # Also extract step size from LOT_SIZE filter
+                step_size = None
+                for f in s.get('filters', []):
+                    if f['filterType'] == 'LOT_SIZE':
+                        step_size = float(f['stepSize'])
+                        break
+
+                self._symbol_info_cache[symbol] = {
+                    'quantity_precision': qty_precision,
+                    'price_precision': price_precision,
+                    'step_size': step_size,
+                }
+            logger.info(f"Loaded exchange info for {len(self._symbol_info_cache)} symbols")
+        except Exception as e:
+            logger.warning(f"Failed to load exchange info (will use defaults): {e}")
+
+    def _round_quantity(self, symbol: str, quantity: float) -> float:
+        """Round quantity to the correct precision for a symbol."""
+        symbol_clean = symbol.replace("/", "")
+        info = self._symbol_info_cache.get(symbol_clean)
+
+        if info and info.get('step_size'):
+            step_size = info['step_size']
+            # Truncate (floor) to step size to avoid exceeding precision
+            quantity = math.floor(quantity / step_size) * step_size
+            # Round to avoid floating point artifacts
+            precision = info['quantity_precision']
+            quantity = round(quantity, precision)
+        else:
+            # Fallback: use 3 decimals (safe for BTC/ETH)
+            quantity = round(quantity, 3)
+            logger.warning(f"No exchange info for {symbol_clean}, using default precision (3)")
+
+        return quantity
+
+    def _round_price(self, symbol: str, price: float) -> float:
+        """Round price to the correct precision for a symbol."""
+        symbol_clean = symbol.replace("/", "")
+        info = self._symbol_info_cache.get(symbol_clean)
+
+        if info:
+            return round(price, info['price_precision'])
+        return round(price, 2)
 
     def get_account_balance(self) -> float:
         """Get USDT balance."""
@@ -86,12 +144,16 @@ class BinanceExchangeWrapper:
         quantity: float
     ) -> Optional[Dict]:
         """Place market order with retry logic."""
+        # Round quantity to correct precision for this symbol
+        quantity = self._round_quantity(symbol, quantity)
+
+        if quantity <= 0:
+            logger.error(f"❌ Quantity is 0 after rounding for {symbol}, aborting")
+            return None
+
         for attempt in range(3):
             try:
                 symbol_clean = symbol.replace("/", "")
-
-                # Round quantity to appropriate precision
-                quantity = round(quantity, 6)
 
                 order = self.client.futures_create_order(
                     symbol=symbol_clean,
@@ -109,7 +171,8 @@ class BinanceExchangeWrapper:
                 # Non-retryable errors
                 if "insufficient balance" in error_msg or \
                    "invalid quantity" in error_msg or \
-                   "min notional" in error_msg:
+                   "min notional" in error_msg or \
+                   "precision" in error_msg:
                     logger.error(f"❌ Non-retryable order error: {e}")
                     return None
 
@@ -142,8 +205,8 @@ class BinanceExchangeWrapper:
                 side=side,
                 type="LIMIT",
                 timeInForce="GTC",
-                quantity=round(quantity, 6),
-                price=round(price, 2)
+                quantity=self._round_quantity(symbol, quantity),
+                price=self._round_price(symbol, price)
             )
 
             logger.info(f"Limit order placed: {side} {quantity} {symbol} @ {price}")

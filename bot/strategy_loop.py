@@ -147,9 +147,9 @@ class StrategyLoop:
     async def _notify_signal(self, signal: Signal):
         """Send Telegram notification for strong signal."""
         emoji = "🟢" if signal.action == ActionType.BUY else "🔴"
-        
+
         message = f"""
-{emoji} <b>SIGNAL: {signal.action}</b>
+{emoji} <b>SIGNAL: {signal.action}</b> (awaiting execution)
 
 Pair: {signal.pair}
 Confidence: {signal.confidence}%
@@ -160,6 +160,8 @@ Price: ${signal.market_data.get('price', 0):.2f}
 Agent Votes:
 - Market: {signal.agent_votes.get('market_analysis', 'N/A')}
 - Risk: {signal.agent_votes.get('risk_management', 'N/A')}
+
+⏳ <i>Execution loop will attempt this trade shortly.</i>
 """
-        
+
         await telegram_notifier.send_message(message)

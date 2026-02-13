@@ -18,6 +18,7 @@ class ExecutionLoop:
         self.daily_trades_count = 0
         self.last_reset_date = datetime.now().date()
         self._paused = False
+        self._attempted_signals: set = set()  # Track signals already attempted
         logger.info(f"ExecutionLoop initialized (interval: {self.interval}s)")
 
     def _calculate_drawdown(self) -> float:
@@ -90,10 +91,16 @@ class ExecutionLoop:
 
             if not signal:
                 continue
-            
+
             # Check if signal is recent (<5 min)
             signal_age = (datetime.now() - signal.timestamp).total_seconds()
             if signal_age > 300:  # 5 minutes
+                # Clean up old attempted signal IDs for this pair
+                self._attempted_signals.discard(signal.signal_id)
+                continue
+
+            # Skip signals already attempted (success or failure)
+            if signal.signal_id in self._attempted_signals:
                 continue
 
             # Check if confidence is sufficient
@@ -114,6 +121,9 @@ class ExecutionLoop:
             if len(open_positions) >= settings.max_positions:
                 logger.warning(f"Max positions ({settings.max_positions}) reached")
                 continue
+
+            # Mark signal as attempted BEFORE execution (prevents retry on failure)
+            self._attempted_signals.add(signal.signal_id)
 
             # EXECUTE TRADE
             await self.execute_signal(signal)
@@ -165,7 +175,13 @@ class ExecutionLoop:
             order = exchange.place_market_order(signal.pair, side, quantity)
 
             if not order:
-                logger.error("Order failed")
+                logger.error(f"Order failed for {signal.pair}")
+                await telegram_notifier.send_message(
+                    f"❌ <b>ORDER FAILED</b>\n\n"
+                    f"{signal.action} {signal.pair}\n"
+                    f"Quantity: {quantity:.6f}\n"
+                    f"The order was rejected by the exchange."
+                )
                 return
 
             # Create Position object
