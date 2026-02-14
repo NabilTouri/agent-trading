@@ -61,13 +61,20 @@ class RedisManager:
         return Position.model_validate_json(data) if data else None
     
     def get_all_open_positions(self) -> List[Position]:
-        """Get all open positions."""
+        """Get all open positions, cleaning up stale IDs."""
         position_ids = self.client.smembers("positions:active")
         positions = []
+        stale_ids = []
         for pid in position_ids:
             pos = self.get_position(pid)
             if pos:
                 positions.append(pos)
+            else:
+                stale_ids.append(pid)
+        # Remove stale IDs whose position data expired
+        if stale_ids:
+            self.client.srem("positions:active", *stale_ids)
+            logger.warning(f"Cleaned up {len(stale_ids)} stale position ID(s) from active set")
         return positions
     
     def close_position(self, position_id: str) -> None:

@@ -67,7 +67,7 @@ export default function Dashboard() {
     const { data: signals, isLoading: signalsLoading } = useQuery<Signal[]>({
         queryKey: ['signals'],
         queryFn: async () => {
-            const res = await axios.get(`/api/signals/history?limit=10`)
+            const res = await axios.get(`/api/signals/history?limit=50`)
             return res.data
         },
         refetchInterval: 10000,
@@ -181,11 +181,11 @@ export default function Dashboard() {
 
             {/* Signals Card - Full Width */}
             <div className="card">
-                <h2>Recent Signals</h2>
+                <h2>Signals History ({signals?.length || 0})</h2>
                 {signalsLoading ? (
                     <div className="loading">Loading...</div>
                 ) : signals && signals.length > 0 ? (
-                    <div className="signals-list">
+                    <div className="signals-list" style={{ maxHeight: '500px', overflowY: 'auto' }}>
                         {signals.map((signal, idx) => (
                             <div key={idx} className="signal-item">
                                 <div className="signal-header">

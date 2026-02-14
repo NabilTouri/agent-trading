@@ -147,6 +147,15 @@ class ExecutionLoop:
                 logger.error("Could not get current price, aborting")
                 return
 
+            # Enforce Binance minimum notional (100 USDT)
+            MIN_NOTIONAL = 100.0
+            if position_size < MIN_NOTIONAL:
+                logger.warning(
+                    f"Position size ${position_size:.2f} below minimum notional "
+                    f"${MIN_NOTIONAL:.0f}, adjusting to minimum"
+                )
+                position_size = MIN_NOTIONAL
+
             # SLIPPAGE PROTECTION
             expected_price = signal.market_data.get('price')
             if expected_price and expected_price > 0:
@@ -184,14 +193,23 @@ class ExecutionLoop:
                 )
                 return
 
+            # Use actual filled quantity and price from order response
+            filled_qty = float(order.get('executedQty', quantity))
+            avg_price = float(order.get('avgPrice', 0))
+            if avg_price <= 0:
+                # Fallback: calculate from cumQuote / executedQty
+                cum_quote = float(order.get('cumQuote', 0))
+                avg_price = cum_quote / filled_qty if filled_qty > 0 and cum_quote > 0 else current_price
+            actual_size = filled_qty * avg_price
+
             # Create Position object
             position = Position(
                 position_id=str(uuid.uuid4()),
                 pair=signal.pair,
                 side=position_side,
-                entry_price=current_price,
-                size=position_size,
-                quantity=quantity,
+                entry_price=avg_price,
+                size=actual_size,
+                quantity=filled_qty,
                 stop_loss=stop_loss,
                 take_profit=take_profit,
                 opened_at=datetime.now(),
@@ -202,8 +220,8 @@ class ExecutionLoop:
             db.save_position(position)
 
             logger.success(
-                f"✅ Position opened: {position_side} {quantity:.6f} "
-                f"{signal.pair} @ ${current_price:.2f}"
+                f"✅ Position opened: {position_side} {filled_qty:.6f} "
+                f"{signal.pair} @ ${avg_price:.2f}"
             )
 
             # Telegram notification
@@ -211,9 +229,9 @@ class ExecutionLoop:
 ✅ <b>POSITION OPENED</b>
 
 {position_side} {signal.pair}
-Entry: ${current_price:.2f}
-Size: ${position_size:.2f}
-Quantity: {quantity:.6f}
+Entry: ${avg_price:.2f}
+Size: ${actual_size:.2f}
+Quantity: {filled_qty:.6f}
 Stop Loss: ${stop_loss:.2f}
 Take Profit: ${take_profit:.2f}
 

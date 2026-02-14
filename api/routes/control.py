@@ -2,7 +2,11 @@ from fastapi import APIRouter, HTTPException
 from core.database import db
 from core.exchange import exchange
 from core.config import settings
+from services.telegram_bot import telegram_notifier
 from loguru import logger
+import json
+import os
+from datetime import datetime
 
 router = APIRouter()
 

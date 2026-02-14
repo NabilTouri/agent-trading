@@ -95,8 +95,7 @@ class BackupService:
             self._cleanup_old_backups()
 
             # Create summary message
-            summary = f"""
-📦 <b>Daily Backup - {datetime.now().strftime('%Y-%m-%d')}</b>
+            summary = f"""📦 <b>Daily Backup - {datetime.now().strftime('%Y-%m-%d')}</b>
 
 💰 Capital: ${capital:.2f}
 📊 Total Trades: {metrics['total_trades']}
@@ -109,6 +108,12 @@ class BackupService:
 """
 
             await telegram_notifier.send_message(summary)
+
+            # Send backup file as document to Telegram
+            await telegram_notifier.send_document(
+                filepath,
+                caption=f"Backup {datetime.now().strftime('%Y-%m-%d')}"
+            )
 
             logger.success("Backup completed")
 

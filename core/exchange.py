@@ -171,7 +171,7 @@ class BinanceExchangeWrapper:
                 # Non-retryable errors
                 if "insufficient balance" in error_msg or \
                    "invalid quantity" in error_msg or \
-                   "min notional" in error_msg or \
+                   "notional" in error_msg or \
                    "precision" in error_msg:
                     logger.error(f"❌ Non-retryable order error: {e}")
                     return None
