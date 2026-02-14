@@ -53,6 +53,7 @@ services:
       - "3000:3000"
     environment:
       - API_INTERNAL_URL=http://api:8000
+      - HOSTNAME=0.0.0.0
     depends_on:
       - api
     restart: unless-stopped

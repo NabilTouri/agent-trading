@@ -33,38 +33,42 @@ async def reconcile_positions():
         reconciled = 0
 
         for pair in settings.pairs_list:
-            # Real position on Binance
-            binance_pos = exchange.get_position_info(pair)
+            try:
+                # Real position on Binance
+                binance_pos = exchange.get_position_info(pair)
 
-            # Find matching Redis position
-            redis_pos = next((p for p in redis_positions if p.pair == pair), None)
+                # Find matching Redis position
+                redis_pos = next((p for p in redis_positions if p.pair == pair), None)
 
-            # CASE 1: Position on Binance but not in Redis (orphan)
-            if binance_pos and not redis_pos:
-                logger.warning(f"⚠️ Orphan position on Binance: {pair} "
-                               f"({binance_pos['side']} {binance_pos['quantity']})")
-                success = exchange.close_position(pair)
-                if success:
+                # CASE 1: Position on Binance but not in Redis (orphan)
+                if binance_pos and not redis_pos:
+                    logger.warning(f"⚠️ Orphan position on Binance: {pair} "
+                                   f"({binance_pos['side']} {binance_pos['quantity']})")
+                    success = exchange.close_position(pair)
+                    if success:
+                        await telegram_notifier.send_message(
+                            f"🔄 <b>Reconciliation</b>\n\n"
+                            f"Closed orphan position on Binance: {pair}\n"
+                            f"Side: {binance_pos['side']}, Qty: {binance_pos['quantity']}"
+                        )
+                        reconciled += 1
+                    else:
+                        logger.error(f"❌ Failed to close orphan position: {pair}")
+
+                # CASE 2: Position in Redis but not on Binance (stale)
+                elif redis_pos and not binance_pos:
+                    logger.warning(f"⚠️ Stale position in Redis: {pair} "
+                                   f"(ID: {redis_pos.position_id})")
+                    db.close_position(redis_pos.position_id)
                     await telegram_notifier.send_message(
                         f"🔄 <b>Reconciliation</b>\n\n"
-                        f"Closed orphan position on Binance: {pair}\n"
-                        f"Side: {binance_pos['side']}, Qty: {binance_pos['quantity']}"
+                        f"Removed stale position from Redis: {pair}\n"
+                        f"ID: {redis_pos.position_id}"
                     )
                     reconciled += 1
-                else:
-                    logger.error(f"❌ Failed to close orphan position: {pair}")
 
-            # CASE 2: Position in Redis but not on Binance (stale)
-            elif redis_pos and not binance_pos:
-                logger.warning(f"⚠️ Stale position in Redis: {pair} "
-                               f"(ID: {redis_pos.position_id})")
-                db.close_position(redis_pos.position_id)
-                await telegram_notifier.send_message(
-                    f"🔄 <b>Reconciliation</b>\n\n"
-                    f"Removed stale position from Redis: {pair}\n"
-                    f"ID: {redis_pos.position_id}"
-                )
-                reconciled += 1
+            except Exception as e:
+                logger.error(f"❌ Reconciliation error for {pair}: {e}")
 
         if reconciled > 0:
             logger.warning(f"🔄 Reconciled {reconciled} position(s)")

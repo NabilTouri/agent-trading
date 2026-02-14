@@ -242,8 +242,8 @@ class BinanceExchangeWrapper:
                         "side": "LONG" if float(pos['positionAmt']) > 0 else "SHORT",
                         "quantity": abs(float(pos['positionAmt'])),
                         "entry_price": float(pos['entryPrice']),
-                        "unrealized_pnl": float(pos['unRealizedProfit']),
-                        "leverage": int(pos['leverage'])
+                        "unrealized_pnl": float(pos.get('unRealizedProfit', 0)),
+                        "leverage": int(pos.get('leverage', 1))
                     }
 
             return None
