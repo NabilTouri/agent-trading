@@ -99,6 +99,7 @@ class TestBackupService:
             mock_settings.max_positions = 3
             mock_settings.binance_testnet = True
             mock_tg.send_message = AsyncMock()
+            mock_tg.send_document = AsyncMock()
 
             from services.backup_service import BackupService
             service = BackupService()
@@ -109,6 +110,7 @@ class TestBackupService:
             msg = mock_tg.send_message.call_args[0][0]
             assert "$3150.00" in msg
             assert "42" in msg
+            mock_tg.send_document.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_create_backup_error(self):

@@ -147,6 +147,20 @@ class ExecutionLoop:
                 logger.error("Could not get current price, aborting")
                 return
 
+            # Determine side early for stop_loss fallback
+            position_side = "LONG" if signal.action == ActionType.BUY else "SHORT"
+
+            # FIX: Validate stop_loss — if 0 or missing, calculate fallback
+            if stop_loss <= 0:
+                if position_side == "LONG":
+                    stop_loss = round(current_price * 0.97, 2)  # 3% below entry
+                else:
+                    stop_loss = round(current_price * 1.03, 2)  # 3% above entry
+                logger.warning(
+                    f"⚠️ Stop loss was 0 — using fallback: ${stop_loss:.2f} "
+                    f"(3% {'below' if position_side == 'LONG' else 'above'} entry)"
+                )
+
             # Enforce Binance minimum notional (100 USDT)
             MIN_NOTIONAL = 100.0
             if position_size < MIN_NOTIONAL:
@@ -176,9 +190,8 @@ class ExecutionLoop:
             # Calculate quantity to buy
             quantity = position_size / current_price
 
-            # Determine side
+            # Side already determined above for stop_loss fallback
             side = "BUY" if signal.action == ActionType.BUY else "SELL"
-            position_side = "LONG" if signal.action == ActionType.BUY else "SHORT"
 
             # Place market order
             order = exchange.place_market_order(signal.pair, side, quantity)
@@ -193,14 +206,35 @@ class ExecutionLoop:
                 )
                 return
 
-            # Use actual filled quantity and price from order response
-            filled_qty = float(order.get('executedQty', quantity))
-            avg_price = float(order.get('avgPrice', 0))
+            # FIX: Robustly parse filled quantity and price from order response
+            try:
+                filled_qty = float(order.get('executedQty', 0))
+            except (ValueError, TypeError):
+                filled_qty = 0
+
+            if filled_qty <= 0:
+                filled_qty = quantity
+                logger.warning(f"executedQty missing/zero in order response, using calculated qty: {quantity}")
+
+            try:
+                avg_price = float(order.get('avgPrice', 0))
+            except (ValueError, TypeError):
+                avg_price = 0
+
             if avg_price <= 0:
                 # Fallback: calculate from cumQuote / executedQty
-                cum_quote = float(order.get('cumQuote', 0))
+                try:
+                    cum_quote = float(order.get('cumQuote', 0))
+                except (ValueError, TypeError):
+                    cum_quote = 0
                 avg_price = cum_quote / filled_qty if filled_qty > 0 and cum_quote > 0 else current_price
+
+            if avg_price <= 0:
+                avg_price = current_price
+                logger.warning(f"avgPrice still 0 after fallbacks, using current_price: ${current_price}")
+
             actual_size = filled_qty * avg_price
+            logger.info(f"Order fill details: qty={filled_qty}, avg_price=${avg_price:.2f}, size=${actual_size:.2f}")
 
             # Create Position object
             position = Position(
@@ -257,16 +291,19 @@ Confidence: {signal.confidence}%
                 should_close = False
                 exit_reason = None
 
-                # Check Stop Loss
-                if position.side == "LONG" and current_price <= position.stop_loss:
-                    should_close = True
-                    exit_reason = "SL"
-                    logger.warning(f"Stop Loss hit for {position.pair}")
+                # FIX: Only check Stop Loss if stop_loss is set (> 0)
+                if position.stop_loss > 0:
+                    if position.side == "LONG" and current_price <= position.stop_loss:
+                        should_close = True
+                        exit_reason = "SL"
+                        logger.warning(f"Stop Loss hit for {position.pair} @ ${current_price:.2f} (<= SL ${position.stop_loss:.2f})")
 
-                elif position.side == "SHORT" and current_price >= position.stop_loss:
-                    should_close = True
-                    exit_reason = "SL"
-                    logger.warning(f"Stop Loss hit for {position.pair}")
+                    elif position.side == "SHORT" and current_price >= position.stop_loss:
+                        should_close = True
+                        exit_reason = "SL"
+                        logger.warning(f"Stop Loss hit for {position.pair} @ ${current_price:.2f} (>= SL ${position.stop_loss:.2f})")
+                else:
+                    logger.warning(f"⚠️ Position {position.pair} has stop_loss=0 — no SL protection!")
 
                 # Check Take Profit
                 if position.take_profit and position.take_profit > 0:

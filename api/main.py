@@ -9,15 +9,11 @@ app = FastAPI(
     description="Multi-agent crypto trading bot API"
 )
 
-# CORS for Next.js dashboard
+# CORS for Next.js dashboard (dashboard connects directly via NEXT_PUBLIC_API_URL)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://dashboard:3000",
-        "http://127.0.0.1:3000"
-    ],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

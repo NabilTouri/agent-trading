@@ -69,10 +69,11 @@ def get_system_status():
     except Exception as e:
         status["redis"] = f"disconnected"
     
-    # Binance
+    # Binance — use cached balance instead of making a fresh API call
+    # This avoids burning API quota just for a health check
     try:
-        exchange.get_account_balance()
-        status["binance"] = "connected"
+        balance = exchange._balance_cache.get("balance", 0)
+        status["binance"] = "connected" if balance > 0 else "unknown"
     except Exception as e:
         status["binance"] = f"disconnected"
 
@@ -98,7 +99,7 @@ def get_detailed_health():
         health["components"]["redis"] = {"status": "unhealthy", "error": str(e)}
         health["status"] = "degraded"
 
-    # Check Binance API
+    # Check Binance API — single call, reuse result
     try:
         balance = exchange.get_account_balance()
         health["components"]["binance"] = {
@@ -108,15 +109,15 @@ def get_detailed_health():
     except Exception as e:
         health["components"]["binance"] = {"status": "unhealthy", "error": str(e)}
         health["status"] = "degraded"
+        balance = 0.0
 
-    # Check drawdown / risk level
+    # Check drawdown / risk level — reuse balance from above
     try:
-        current_capital = exchange.get_account_balance()
         initial_capital = db.get_initial_capital()
 
         drawdown = 0.0
-        if initial_capital > 0 and current_capital < initial_capital:
-            drawdown = ((initial_capital - current_capital) / initial_capital) * 100
+        if initial_capital > 0 and balance < initial_capital:
+            drawdown = ((initial_capital - balance) / initial_capital) * 100
 
         risk_status = "healthy"
         if drawdown > settings.max_drawdown * 100:
@@ -131,7 +132,7 @@ def get_detailed_health():
             "status": risk_status,
             "current_drawdown_pct": round(drawdown, 2),
             "max_drawdown_pct": settings.max_drawdown * 100,
-            "current_capital": current_capital,
+            "current_capital": balance,
             "initial_capital": initial_capital
         }
     except Exception as e:

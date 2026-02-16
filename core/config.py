@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     
     # Strategy
     strategy_interval_minutes: int = 30
-    execution_interval_seconds: int = 10
+    execution_interval_seconds: int = 30
     
     # Logging
     log_level: str = "INFO"

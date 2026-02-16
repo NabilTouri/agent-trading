@@ -3,6 +3,10 @@
 import { useQuery } from '@tanstack/react-query'
 import axios from 'axios'
 
+// In production (standalone Docker), NEXT_PUBLIC_API_URL points to the API server.
+// In dev mode, Next.js rewrites handle /api/* proxying, so empty string works.
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || ''
+
 interface Metrics {
     capital: {
         current: number
@@ -49,37 +53,37 @@ export default function Dashboard() {
     const { data: metrics, isLoading: metricsLoading } = useQuery<Metrics>({
         queryKey: ['metrics'],
         queryFn: async () => {
-            const res = await axios.get(`/api/system/metrics`)
+            const res = await axios.get(`${API_BASE}/api/system/metrics`)
             return res.data
         },
-        refetchInterval: 5000,
+        refetchInterval: 30000,
     })
 
     const { data: positions, isLoading: positionsLoading } = useQuery<Position[]>({
         queryKey: ['positions'],
         queryFn: async () => {
-            const res = await axios.get(`/api/positions/current`)
+            const res = await axios.get(`${API_BASE}/api/positions/current`)
             return res.data
         },
-        refetchInterval: 5000,
+        refetchInterval: 30000,
     })
 
     const { data: signals, isLoading: signalsLoading } = useQuery<Signal[]>({
         queryKey: ['signals'],
         queryFn: async () => {
-            const res = await axios.get(`/api/signals/history?limit=50`)
+            const res = await axios.get(`${API_BASE}/api/signals/history?limit=50`)
             return res.data
         },
-        refetchInterval: 10000,
+        refetchInterval: 60000,
     })
 
     const { data: status } = useQuery({
         queryKey: ['status'],
         queryFn: async () => {
-            const res = await axios.get(`/api/system/status`)
+            const res = await axios.get(`${API_BASE}/api/system/status`)
             return res.data
         },
-        refetchInterval: 10000,
+        refetchInterval: 30000,
     })
 
     const isOnline = status?.redis === 'connected' && status?.binance === 'connected'

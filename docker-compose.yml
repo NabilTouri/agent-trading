@@ -2,11 +2,12 @@ services:
   redis:
     image: redis:7.2-alpine
     container_name: trading-redis
-    command: redis-server --appendonly yes --maxmemory 400mb --maxmemory-policy allkeys-lru
+    command: redis-server /usr/local/etc/redis/redis.conf --replicaof no one
     ports:
       - "6379:6379"
     volumes:
       - redis-data:/data
+      - ./redis.conf:/usr/local/etc/redis/redis.conf:ro
     restart: unless-stopped
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
@@ -48,6 +49,8 @@ services:
     build:
       context: ./dashboard
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
     container_name: trading-dashboard
     ports:
       - "3000:3000"
