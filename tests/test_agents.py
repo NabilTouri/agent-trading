@@ -1,140 +1,147 @@
 """
-Test suite for trading agents.
+Test suite for CrewAI trading agents.
+Validates agent creation via factory functions, tool assignment, and crew assembly.
+
+NOTE: These tests mock crewai's LLM creation because crewai[anthropic] is not
+installed in the test environment. The mocks allow Agent objects to be created
+without actually connecting to an LLM provider.
 """
 
 import pytest
-from unittest.mock import Mock, patch
-import json
+from unittest.mock import patch, MagicMock
+
+# LLM string used for testing - not actually called
+_TEST_LLM = "anthropic/claude-sonnet-4-20250514"
+
+
+@pytest.fixture(autouse=True)
+def _mock_crewai_llm():
+    """Mock crewai's LLM creation so Agent() doesn't require real provider."""
+    with patch("crewai.agent.core.create_llm", return_value=MagicMock()):
+        yield
 
 
 class TestMarketAnalysisAgent:
-    """Tests for MarketAnalysisAgent."""
-    
-    def test_format_input(self):
-        """Test input formatting."""
-        from agents.market_analysis import MarketAnalysisAgent
-        
-        agent = MarketAnalysisAgent()
-        
-        market_data = {
-            'pair': 'BTC/USDT',
-            'current_price': 50000.0,
-            'candles_15m': [
-                {'open': 49900, 'high': 50100, 'low': 49800, 'close': 50000, 'volume': 1000}
-            ],
-            'indicators': {
-                'rsi': 55.0,
-                'macd': 100.0,
-                'macd_signal': 80.0,
-                'bb_upper': 51000.0,
-                'bb_lower': 49000.0,
-                'atr': 500.0
-            },
-            'volume_24h': 1000000,
-            'change_1h': 0.5,
-            'change_4h': 1.2,
-            'change_24h': 2.5,
-            'volatility': 'MEDIUM'
-        }
-        
-        result = agent.format_input(market_data)
-        
-        assert 'BTC/USDT' in result
-        assert '50000' in result
-        assert 'RSI: 55.0' in result
-    
-    def test_parse_output_valid(self):
-        """Test valid JSON parsing."""
-        from agents.market_analysis import MarketAnalysisAgent
-        
-        agent = MarketAnalysisAgent()
-        
-        response = json.dumps({
-            'action': 'BUY',
-            'confidence': 75,
-            'reasoning': 'Strong uptrend',
-            'key_levels': {'support': 49000, 'resistance': 51000},
-            'market_regime': 'trending_up'
-        })
-        
-        result = agent.parse_output(response)
-        
-        assert result['action'] == 'BUY'
-        assert result['confidence'] == 75
-        assert 'error' not in result
-    
-    def test_parse_output_invalid(self):
-        """Test invalid JSON parsing fallback."""
-        from agents.market_analysis import MarketAnalysisAgent
-        
-        agent = MarketAnalysisAgent()
-        
-        result = agent.parse_output("invalid json")
-        
-        assert result['action'] == 'HOLD'
-        assert result['confidence'] == 0
-        assert result.get('error') is True
+    """Tests for the Market Analysis CrewAI Agent."""
+
+    def test_agent_creation(self):
+        """Agent should be created with correct role and goal."""
+        from agents.market_analysis_agent import create_market_analysis_agent
+
+        agent = create_market_analysis_agent(_TEST_LLM)
+        assert agent.role is not None
+        assert "market" in agent.role.lower() or "analyst" in agent.role.lower()
+
+    def test_agent_has_tools(self):
+        """Agent should have technical analysis and market data tools."""
+        from agents.market_analysis_agent import create_market_analysis_agent
+
+        agent = create_market_analysis_agent(_TEST_LLM)
+        assert len(agent.tools) > 0
+        tool_names = [t.name for t in agent.tools]
+        assert "calculate_indicators" in tool_names
+        assert "get_orderbook" in tool_names
+        assert "get_current_price" in tool_names
+
+    def test_agent_has_correct_tool_count(self):
+        """Market Analysis Agent should have exactly 8 tools."""
+        from agents.market_analysis_agent import create_market_analysis_agent
+
+        agent = create_market_analysis_agent(_TEST_LLM)
+        assert len(agent.tools) == 8
 
 
-class TestRiskManagementAgent:
-    """Tests for RiskManagementAgent."""
-    
-    def test_parse_output_valid(self):
-        """Test valid risk assessment parsing."""
-        from agents.risk_management import RiskManagementAgent
-        
-        agent = RiskManagementAgent()
-        
-        response = json.dumps({
-            'action': 'APPROVE',
-            'position_size_usd': 60.0,
-            'stop_loss': 49000.0,
-            'take_profit': 52000.0,
-            'risk_reward_ratio': 2.0,
-            'confidence': 80,
-            'reasoning': 'Risk within parameters'
-        })
-        
-        result = agent.parse_output(response)
-        
-        assert result['action'] == 'APPROVE'
-        assert result['position_size_usd'] == 60.0
-        assert result['stop_loss'] == 49000.0
-    
-    def test_parse_output_reject(self):
-        """Test risk rejection."""
-        from agents.risk_management import RiskManagementAgent
-        
-        agent = RiskManagementAgent()
-        
-        result = agent.parse_output("invalid")
-        
-        assert result['action'] == 'REJECT'
-        assert result['position_size_usd'] == 0
+class TestSentimentAgent:
+    """Tests for the Sentiment Analysis CrewAI Agent."""
+
+    def test_agent_creation(self):
+        """Agent should be created with correct role."""
+        from agents.sentiment_agent import create_sentiment_agent
+
+        agent = create_sentiment_agent(_TEST_LLM)
+        assert agent.role is not None
+        assert "sentiment" in agent.role.lower()
+
+    def test_agent_has_tools(self):
+        """Agent should have sentiment-focused tools."""
+        from agents.sentiment_agent import create_sentiment_agent
+
+        agent = create_sentiment_agent(_TEST_LLM)
+        assert len(agent.tools) > 0
+        tool_names = [t.name for t in agent.tools]
+        assert "get_fear_greed_index" in tool_names
+        assert "get_crypto_news" in tool_names
+
+    def test_agent_has_correct_tool_count(self):
+        """Sentiment Agent should have exactly 4 tools."""
+        from agents.sentiment_agent import create_sentiment_agent
+
+        agent = create_sentiment_agent(_TEST_LLM)
+        assert len(agent.tools) == 4
 
 
-class TestOrchestratorAgent:
-    """Tests for OrchestratorAgent."""
-    
-    def test_parse_output_valid(self):
-        """Test orchestrator decision parsing."""
-        from agents.orchestrator import OrchestratorAgent
-        
-        agent = OrchestratorAgent()
-        
-        response = json.dumps({
-            'final_action': 'BUY',
-            'confidence': 70,
-            'reasoning': 'All agents agree on bullish signal',
-            'risk_level': 'MEDIUM',
-            'overrides': []
-        })
-        
-        result = agent.parse_output(response)
-        
-        assert result['final_action'] == 'BUY'
-        assert result['confidence'] == 70
-        assert result['risk_level'] == 'MEDIUM'
+class TestTradingOpsAgent:
+    """Tests for the Trading Operations CrewAI Agent."""
+
+    def test_agent_creation(self):
+        """Agent should be created with correct role."""
+        from agents.trading_ops_agent import create_trading_ops_agent
+
+        agent = create_trading_ops_agent(_TEST_LLM)
+        assert agent.role is not None
+
+    def test_agent_has_tools(self):
+        """Agent should have risk management tools."""
+        from agents.trading_ops_agent import create_trading_ops_agent
+
+        agent = create_trading_ops_agent(_TEST_LLM)
+        assert len(agent.tools) > 0
+        tool_names = [t.name for t in agent.tools]
+        assert "get_portfolio_state" in tool_names
+        assert "calculate_kelly_position_size" in tool_names
+
+    def test_agent_has_correct_tool_count(self):
+        """Trading Ops Agent should have exactly 6 tools."""
+        from agents.trading_ops_agent import create_trading_ops_agent
+
+        agent = create_trading_ops_agent(_TEST_LLM)
+        assert len(agent.tools) == 6
+
+
+class TestTradingCrew:
+    """Tests for the TradingCrew assembly."""
+
+    def test_crew_init(self):
+        """TradingCrew should initialize with a pair."""
+        from agents.crew import TradingCrew
+
+        crew = TradingCrew("BTC/USDT")
+        assert crew.pair == "BTC/USDT"
+
+    def test_crew_builds_tasks(self):
+        """TradingCrew should build 3 sequential tasks."""
+        from agents.crew import TradingCrew
+
+        crew = TradingCrew("ETH/USDT")
+        tasks = crew._build_tasks()
+        assert len(tasks) == 3
+
+    def test_crew_agents(self):
+        """TradingCrew should have 3 agents."""
+        from agents.crew import TradingCrew
+
+        crew = TradingCrew("BTC/USDT")
+        agents = [crew.market_agent, crew.sentiment_agent, crew.trading_ops_agent]
+        assert len(agents) == 3
+        assert all(a is not None for a in agents)
+
+    def test_get_usage_metrics_before_run(self):
+        """Usage metrics should be empty dict before run."""
+        from agents.crew import TradingCrew
+
+        crew = TradingCrew("BTC/USDT")
+        metrics = crew.get_usage_metrics()
+        assert metrics == {}
 
 
 if __name__ == '__main__':

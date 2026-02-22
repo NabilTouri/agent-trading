@@ -5,161 +5,146 @@ from core.config import settings
 from core.database import db
 from core.exchange import exchange
 from core.models import Signal, ActionType
-from agents.market_analysis import MarketAnalysisAgent
-from agents.risk_management import RiskManagementAgent
-from agents.orchestrator import OrchestratorAgent
+from core.cost_tracker import cost_tracker
+from core.safeguards import safeguards
+from agents.crew import TradingCrew
 from services.telegram_bot import telegram_notifier
-from core.data_pipeline import DataPipeline
 
 
 class StrategyLoop:
-    """Strategy loop: Phase 1 with 3 agents (no sentiment)."""
-    
+    """Strategy loop: runs CrewAI crew for each trading pair on interval."""
+
     def __init__(self):
         self.interval = settings.strategy_interval_minutes * 60  # to seconds
-        self.market_agent = MarketAnalysisAgent()
-        # NO sentiment agent in Phase 1
-        self.risk_agent = RiskManagementAgent()
-        self.orchestrator = OrchestratorAgent()
-        self.data_pipeline = DataPipeline()
-        
-        logger.info(f"StrategyLoop PHASE 1 initialized (3 agents: Market, Risk, Orchestrator)")
-        logger.info(f"Interval: {self.interval}s ({settings.strategy_interval_minutes}min)")
-    
+
+        logger.info(
+            f"StrategyLoop initialized (CrewAI mode) — "
+            f"Model: {settings.crew_model}, "
+            f"Interval: {settings.strategy_interval_minutes}min, "
+            f"Pairs: {settings.pairs_list}"
+        )
+
     async def run(self):
         """Main loop."""
         # Initial delay to let system stabilize
         await asyncio.sleep(5)
-        
+
         while True:
             try:
                 logger.info("=" * 50)
                 logger.info(f"STRATEGY CYCLE START - {datetime.now()}")
-                
-                # Analyze each trading pair
+
                 for pair in settings.pairs_list:
                     await self.analyze_pair(pair)
-                
+
                 logger.info(f"STRATEGY CYCLE END - sleeping {self.interval}s")
                 logger.info("=" * 50)
-                
+
             except Exception as e:
                 logger.error(f"Strategy loop error: {e}")
-            
+
             await asyncio.sleep(self.interval)
-    
+
     async def analyze_pair(self, pair: str):
-        """Analyze with 2 agents + orchestrator (NO sentiment in Phase 1)."""
+        """Run CrewAI analysis pipeline for a single pair."""
         logger.info(f"Analyzing {pair}...")
-        
+
         try:
-            # 1. Fetch market data (no news in Phase 1)
-            market_data = await self.data_pipeline.fetch_market_data(pair)
-            
-            # 2. Market Analysis Agent
-            market_result = await asyncio.to_thread(
-                self.market_agent.analyze, 
-                market_data
-            )
-            
-            # 3. Risk Management Agent
-            risk_data = {
-                **market_data,
-                'proposed_action': market_result.get('action', 'HOLD'),
-                'analysis_confidence': market_result.get('confidence', 0),
-                'account_balance': exchange.get_account_balance(),
-                'open_positions_count': len(db.get_all_open_positions()),
-                'drawdown': self._calculate_drawdown(),
-                'win_rate': db.calculate_metrics()['win_rate'],
-                'avg_profit': db.calculate_metrics()['avg_profit'],
-                'avg_loss': db.calculate_metrics()['avg_loss']
-            }
-            
-            risk_result = await asyncio.to_thread(
-                self.risk_agent.analyze, 
-                risk_data
-            )
-            
-            # 4. Orchestrator (2 inputs only - no sentiment in Phase 1)
-            orchestrator_input = {
-                'pair': pair,
-                'market_analysis': market_result,
-                'risk_management': risk_result,
-                # NO 'sentiment' in Phase 1
-                'account_balance': risk_data['account_balance'],
-                'open_positions': risk_data['open_positions_count'],
-                'win_rate': risk_data['win_rate']
-            }
-            
-            final_decision = await asyncio.to_thread(
-                self.orchestrator.make_decision,
-                orchestrator_input
-            )
-            
-            # 5. Create signal
+            # 1. Check cost budget before running crew
+            if not cost_tracker.check_budget():
+                logger.warning(f"💰 Budget limit reached — skipping {pair}")
+                return
+
+            # 2. Run CrewAI crew (blocking call wrapped in thread)
+            crew = TradingCrew(pair)
+            decision = await asyncio.to_thread(crew.run)
+
+            if decision is None:
+                logger.warning(f"Crew returned no decision for {pair}")
+                return
+
+            # 3. Log token usage
+            usage = crew.get_usage_metrics()
+            if usage:
+                cost_tracker.log_usage(usage, pair=pair)
+
+            # 4. Run through safeguards (only if APPROVED by crew)
+            if decision.decision == "APPROVED":
+                report = safeguards.validate_trade(decision)
+                approved = report.approved
+                reasoning_suffix = ""
+                if not approved:
+                    reasoning_suffix = f" [BLOCKED: {report.blocked_reason}]"
+            else:
+                approved = False
+                reasoning_suffix = " [Crew: REJECTED]"
+
+            # 5. Create signal from decision
+            action = ActionType.HOLD
+            if approved:
+                action = ActionType.BUY if decision.direction == "LONG" else ActionType.SELL
+
             signal = Signal(
                 pair=pair,
-                action=ActionType(final_decision.get('final_action', 'HOLD')),
-                confidence=final_decision.get('confidence', 0),
-                reasoning=final_decision.get('reasoning', ''),
+                action=action,
+                confidence=decision.confidence,
+                reasoning=decision.reasoning + reasoning_suffix,
                 agent_votes={
-                    'market_analysis': market_result.get('action', 'HOLD'),
-                    # 'sentiment': NOT in Phase 1
-                    'risk_management': risk_result.get('action', 'REJECT'),
-                    'orchestrator': final_decision.get('final_action', 'HOLD')
+                    "market_analysis": decision.market_analysis_summary[:100] if decision.market_analysis_summary else "N/A",
+                    "sentiment": decision.sentiment_summary[:100] if decision.sentiment_summary else "N/A",
+                    "trading_ops": decision.decision,
                 },
                 market_data={
-                    'price': market_data.get('current_price', 0),
-                    'rsi': market_data.get('indicators', {}).get('rsi', 0),
-                    'stop_loss': risk_result.get('stop_loss', 0),
-                    'take_profit': risk_result.get('take_profit', 0),
-                    'position_size': risk_result.get('position_size_usd', 0)
-                }
+                    "price": decision.entry.price if decision.entry else 0,
+                    "stop_loss": decision.stop_loss.price if decision.stop_loss else 0,
+                    "take_profit": decision.take_profit[0].price if decision.take_profit else 0,
+                    "position_size": decision.position_size_usd,
+                    "direction": decision.direction,
+                    "risk_reward_ratio": decision.risk_reward_ratio,
+                },
             )
-            
+
             # 6. Save signal
             db.save_signal(signal)
-            
+
             logger.info(
-                f"Signal generated for {pair}: {signal.action} "
-                f"(confidence: {signal.confidence}%)"
+                f"Signal for {pair}: {signal.action} "
+                f"(confidence: {signal.confidence}%, "
+                f"direction: {decision.direction}, "
+                f"R:R: {decision.risk_reward_ratio:.2f})"
             )
-            
-            # 7. Notify if strong signal
-            if signal.confidence >= 70 and signal.action != ActionType.HOLD:
-                await self._notify_signal(signal)
-        
+
+            # 7. Notify if approved and high confidence
+            if approved and decision.confidence >= settings.full_size_confidence:
+                await self._notify_signal(signal, decision)
+
         except Exception as e:
             logger.error(f"Error analyzing {pair}: {e}")
             import traceback
             traceback.print_exc()
-    
-    def _calculate_drawdown(self) -> float:
-        """Calculate current drawdown percentage."""
-        current_capital = exchange.get_account_balance()
-        initial_capital = db.get_initial_capital()
-        
-        if initial_capital == 0 or current_capital >= initial_capital:
-            return 0.0
-        
-        return ((initial_capital - current_capital) / initial_capital) * 100
-    
-    async def _notify_signal(self, signal: Signal):
-        """Send Telegram notification for strong signal."""
+
+    async def _notify_signal(self, signal: Signal, decision):
+        """Send Telegram notification for approved signal."""
         emoji = "🟢" if signal.action == ActionType.BUY else "🔴"
+        direction = "LONG" if signal.action == ActionType.BUY else "SHORT"
+
+        # Format take profit levels
+        tp_lines = ""
+        for tp in decision.take_profit:
+            tp_lines += f"  TP{tp.level}: ${tp.price:.2f} ({tp.size_pct}%)\n"
 
         message = f"""
-{emoji} <b>SIGNAL: {signal.action}</b> (awaiting execution)
+{emoji} <b>SIGNAL: {direction} {signal.pair}</b>
 
-Pair: {signal.pair}
 Confidence: {signal.confidence}%
-Price: ${signal.market_data.get('price', 0):.2f}
+Entry: ${decision.entry.price:.2f} ({decision.entry.method})
+Size: ${decision.position_size_usd:.2f} ({decision.position_size_pct:.1f}%)
+R:R: {decision.risk_reward_ratio:.2f}
 
+Stop Loss: ${decision.stop_loss.price:.2f} ({decision.stop_loss.pct:.1f}%)
+Take Profit:
+{tp_lines}
 <i>{signal.reasoning[:200]}...</i>
-
-Agent Votes:
-- Market: {signal.agent_votes.get('market_analysis', 'N/A')}
-- Risk: {signal.agent_votes.get('risk_management', 'N/A')}
 
 ⏳ <i>Execution loop will attempt this trade shortly.</i>
 """

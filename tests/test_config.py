@@ -62,3 +62,27 @@ class TestSettings:
 
         # Should not raise
         assert s.redis_host == "redis"
+
+    def test_crewai_defaults(self):
+        """CrewAI-related settings should have sane defaults."""
+        from core.config import Settings
+
+        with patch.dict(os.environ, {}, clear=True):
+            s = Settings(_env_file=None)
+
+        assert s.crew_model == "claude-sonnet-4-20250514"
+        assert 0 <= s.crew_temperature <= 1.0
+        assert s.daily_cost_limit_usd > 0
+        assert s.monthly_cost_limit_usd > 0
+
+    def test_safeguard_defaults(self):
+        """Safeguard thresholds should have sane defaults."""
+        from core.config import Settings
+
+        with patch.dict(os.environ, {}, clear=True):
+            s = Settings(_env_file=None)
+
+        assert s.min_confidence > 0
+        assert s.min_rr_ratio > 0
+        assert s.max_sl_distance_pct > 0
+        assert s.max_trades_per_day > 0

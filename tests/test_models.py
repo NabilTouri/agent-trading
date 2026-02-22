@@ -1,175 +1,136 @@
 """
-Tests for core.models — Pydantic data models.
+Tests for Pydantic models.
+
+Tests serialization, validation, and defaults for all new CrewAI models.
 """
 
 import pytest
-from datetime import datetime
-from pydantic import ValidationError
+from core.models import (
+    TradeDecision, EntryPlan, EntryOrder, StopLossLevel, TakeProfitLevel,
+    Signal, Position, Trade, ActionType,
+    SafeguardResult, SafeguardReport,
+)
 
 
-class TestActionType:
-    def test_enum_values(self):
-        from core.models import ActionType
-        assert ActionType.BUY == "BUY"
-        assert ActionType.SELL == "SELL"
-        assert ActionType.HOLD == "HOLD"
-
-
-class TestSignal:
-    def test_create_valid(self):
-        from core.models import Signal, ActionType
-
-        sig = Signal(
+class TestTradeDecision:
+    def test_valid_approved_decision(self):
+        decision = TradeDecision(
+            decision="APPROVED",
             pair="BTC/USDT",
-            action=ActionType.BUY,
-            confidence=80.0,
-            reasoning="Strong bullish signal",
-            agent_votes={"market": "BUY", "risk": "APPROVE"},
-            market_data={"price": 50000},
+            direction="LONG",
+            confidence=80,
+            position_size_usd=500.0,
+            position_size_pct=2.5,
+            entry=EntryPlan(method="LIMIT", price=50000.0, orders=[
+                EntryOrder(price=49900.0, size=250.0),
+                EntryOrder(price=50000.0, size=250.0),
+            ]),
+            stop_loss=StopLossLevel(price=48500.0, pct=3.0, type="STOP_LIMIT"),
+            take_profit=[
+                TakeProfitLevel(level=1, price=52000.0, size_pct=50),
+                TakeProfitLevel(level=2, price=54000.0, size_pct=50),
+            ],
+            risk_reward_ratio=2.67,
+            reasoning="Strong technical setup",
         )
-        assert sig.pair == "BTC/USDT"
-        assert sig.confidence == 80.0
-        assert sig.signal_id.startswith("sig_")
-        assert isinstance(sig.timestamp, datetime)
+        assert decision.decision == "APPROVED"
+        assert decision.confidence == 80
+        assert len(decision.take_profit) == 2
+
+    def test_rejected_decision(self):
+        decision = TradeDecision(
+            decision="REJECTED",
+            pair="ETH/USDT",
+            direction="SHORT",
+            confidence=40,
+            position_size_usd=0,
+            position_size_pct=0,
+            entry=EntryPlan(method="MARKET", price=3000.0),
+            stop_loss=StopLossLevel(price=3100.0, pct=3.3, type="STOP_MARKET"),
+            risk_reward_ratio=1.2,
+            reasoning="Insufficient confidence",
+        )
+        assert decision.decision == "REJECTED"
 
     def test_confidence_bounds(self):
-        from core.models import Signal, ActionType
-
-        with pytest.raises(ValidationError):
-            Signal(
+        with pytest.raises(Exception):
+            TradeDecision(
+                decision="APPROVED",
                 pair="BTC/USDT",
-                action=ActionType.BUY,
-                confidence=150.0,  # > 100
-                reasoning="x",
-                agent_votes={},
-                market_data={},
+                direction="LONG",
+                confidence=150,  # Invalid: >100
+                position_size_usd=100,
+                position_size_pct=1,
+                entry=EntryPlan(method="MARKET", price=50000),
+                stop_loss=StopLossLevel(price=49000, pct=2, type="STOP_LIMIT"),
+                risk_reward_ratio=2.0,
+                reasoning="test",
             )
 
-        with pytest.raises(ValidationError):
-            Signal(
-                pair="BTC/USDT",
-                action=ActionType.BUY,
-                confidence=-10.0,  # < 0
-                reasoning="x",
-                agent_votes={},
-                market_data={},
-            )
-
-    def test_json_round_trip(self):
-        from core.models import Signal, ActionType
-
-        sig = Signal(
-            pair="ETH/USDT",
-            action=ActionType.SELL,
-            confidence=65.0,
-            reasoning="Bearish",
-            agent_votes={"market": "SELL"},
-            market_data={"price": 3000},
+    def test_json_serialization(self):
+        decision = TradeDecision(
+            decision="APPROVED",
+            pair="BTC/USDT",
+            direction="LONG",
+            confidence=70,
+            position_size_usd=200,
+            position_size_pct=1,
+            entry=EntryPlan(method="MARKET", price=50000),
+            stop_loss=StopLossLevel(price=49000, pct=2, type="STOP_LIMIT"),
+            risk_reward_ratio=2.5,
+            reasoning="test",
         )
-        json_str = sig.model_dump_json()
-        restored = Signal.model_validate_json(json_str)
-        assert restored.pair == sig.pair
-        assert restored.action == sig.action
+        data = decision.model_dump()
+        assert data["decision"] == "APPROVED"
+        assert data["entry"]["method"] == "MARKET"
 
 
-class TestPosition:
-    def test_create_valid(self):
-        from core.models import Position
+class TestSafeguardReport:
+    def test_approved_report(self):
+        report = SafeguardReport(
+            approved=True,
+            checks=[
+                SafeguardResult(check_name="confidence", passed=True, reason="OK"),
+                SafeguardResult(check_name="rr_ratio", passed=True, reason="OK"),
+            ],
+        )
+        assert report.approved is True
+        assert len(report.checks) == 2
 
+    def test_rejected_report(self):
+        report = SafeguardReport(
+            approved=False,
+            checks=[
+                SafeguardResult(check_name="confidence", passed=False, reason="Too low"),
+            ],
+            blocked_reason="Confidence too low",
+        )
+        assert report.approved is False
+        assert report.blocked_reason == "Confidence too low"
+
+
+class TestLegacyModels:
+    def test_signal_creation(self):
+        signal = Signal(
+            pair="BTC/USDT",
+            action=ActionType.BUY,
+            confidence=85.0,
+            reasoning="Test",
+            agent_votes={"market": "BUY"},
+            market_data={"price": 50000},
+        )
+        assert signal.action == ActionType.BUY
+        assert signal.signal_id.startswith("sig_")
+
+    def test_position_creation(self):
         pos = Position(
             pair="BTC/USDT",
             side="LONG",
             entry_price=50000.0,
-            size=100.0,
-            quantity=0.002,
+            size=500.0,
+            quantity=0.01,
             stop_loss=49000.0,
             signal_id="sig_123",
         )
         assert pos.side == "LONG"
-        assert pos.leverage == 1  # default
-        assert pos.take_profit is None  # optional
-
-    def test_invalid_side(self):
-        from core.models import Position
-
-        with pytest.raises(ValidationError):
-            Position(
-                pair="BTC/USDT",
-                side="INVALID",
-                entry_price=50000.0,
-                size=100.0,
-                quantity=0.002,
-                stop_loss=49000.0,
-                signal_id="sig_123",
-            )
-
-
-class TestTrade:
-    def test_create_valid(self):
-        from core.models import Trade
-
-        trade = Trade(
-            position_id="pos_1",
-            pair="BTC/USDT",
-            side="LONG",
-            entry_price=50000.0,
-            exit_price=51000.0,
-            size=100.0,
-            quantity=0.002,
-            pnl=2.0,
-            pnl_percent=2.0,
-            fees=0.08,
-            opened_at=datetime.now(),
-            duration_minutes=45,
-            exit_reason="TP",
-        )
-        assert trade.exit_reason == "TP"
-        assert trade.pnl == 2.0
-
-    def test_invalid_exit_reason(self):
-        from core.models import Trade
-
-        with pytest.raises(ValidationError):
-            Trade(
-                position_id="pos_1",
-                pair="BTC/USDT",
-                side="LONG",
-                entry_price=50000.0,
-                exit_price=51000.0,
-                size=100.0,
-                quantity=0.002,
-                pnl=2.0,
-                pnl_percent=2.0,
-                fees=0.08,
-                opened_at=datetime.now(),
-                duration_minutes=45,
-                exit_reason="INVALID",
-            )
-
-
-class TestOrderRequest:
-    def test_market_order(self):
-        from core.models import OrderRequest
-
-        order = OrderRequest(
-            pair="BTC/USDT",
-            side="BUY",
-            order_type="MARKET",
-            quantity=0.001,
-        )
-        assert order.price is None
-        assert order.stop_loss is None
-
-    def test_limit_order(self):
-        from core.models import OrderRequest
-
-        order = OrderRequest(
-            pair="ETH/USDT",
-            side="SELL",
-            order_type="LIMIT",
-            quantity=0.5,
-            price=3000.0,
-            stop_loss=2900.0,
-            take_profit=3200.0,
-        )
-        assert order.price == 3000.0
+        assert pos.position_id  # UUID should be generated

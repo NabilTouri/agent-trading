@@ -33,6 +33,14 @@ class TestBinanceExchangeWrapper:
                 "BTCUSDT": {"quantity_precision": 3, "price_precision": 2, "step_size": 0.001},
                 "ETHUSDT": {"quantity_precision": 3, "price_precision": 2, "step_size": 0.001},
             }
+            # Cache and rate-limit state (normally set in __init__)
+            ex._price_cache = {}
+            ex._balance_cache = {"balance": 0.0, "ts": 0.0}
+            ex._PRICE_CACHE_TTL = 30
+            ex._BALANCE_CACHE_TTL = 300
+            ex._rate_limited_until = 0.0
+            ex._backoff_seconds = 60.0
+            ex._MAX_BACKOFF = 600.0
         return ex
 
     # ── Balance ──────────────────────────────────────────────

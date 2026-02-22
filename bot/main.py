@@ -1,5 +1,6 @@
 import asyncio
 import sys
+import os
 from loguru import logger
 from core.config import settings
 from core.database import db
@@ -21,6 +22,10 @@ logger.add(
     retention="30 days",
     level="DEBUG"
 )
+
+# Set ANTHROPIC_API_KEY for CrewAI (LiteLLM reads from env)
+if settings.anthropic_api_key and not os.environ.get("ANTHROPIC_API_KEY"):
+    os.environ["ANTHROPIC_API_KEY"] = settings.anthropic_api_key
 
 
 async def reconcile_positions():
@@ -88,22 +93,26 @@ async def main():
     current_balance = exchange.get_account_balance()
 
     logger.info("=" * 50)
-    logger.info("AI TRADING BOT STARTING")
+    logger.info("AI TRADING BOT STARTING (CrewAI Multi-Agent)")
     logger.info(f"Mode: {'TESTNET' if settings.binance_testnet else 'MAINNET'}")
+    logger.info(f"Model: {settings.crew_model}")
     logger.info(f"Trading Pairs: {settings.pairs_list}")
     logger.info(f"Current Balance: ${current_balance:.2f}")
     logger.info(f"Risk per Trade: {settings.risk_per_trade * 100}%")
     logger.info(f"Max Positions: {settings.max_positions}")
+    logger.info(f"Daily Cost Limit: ${settings.daily_cost_limit_usd}")
     logger.info("=" * 50)
 
     # Send startup notification
     await telegram_notifier.send_message(
-        f"""🤖 <b>Trading Bot Started</b>
+        f"""🤖 <b>Trading Bot Started (CrewAI)</b>
 
 Mode: {'TESTNET' if settings.binance_testnet else '⚠️ MAINNET'}
+Model: {settings.crew_model}
 Pairs: {', '.join(settings.pairs_list)}
 Balance: ${current_balance:.2f}
-Risk/Trade: {settings.risk_per_trade * 100}%"""
+Risk/Trade: {settings.risk_per_trade * 100}%
+Cost Limit: ${settings.daily_cost_limit_usd}/day"""
     )
 
     # Reconcile positions before starting loops
