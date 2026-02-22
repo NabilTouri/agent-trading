@@ -21,6 +21,8 @@ services:
       dockerfile: Dockerfile
     container_name: trading-bot
     env_file: .env
+    environment:
+      - CREWAI_TRACING_ENABLED=true
     depends_on:
       redis:
         condition: service_healthy

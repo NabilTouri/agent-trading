@@ -95,7 +95,8 @@ class BinanceExchangeWrapper:
         if info and info.get('step_size'):
             step_size = info['step_size']
             # Truncate (floor) to step size to avoid exceeding precision
-            quantity = math.floor(quantity / step_size) * step_size
+            # Add small epsilon to avoid floating-point floor errors (e.g. 2.0 -> 1.999... -> 1)
+            quantity = math.floor(quantity / step_size + 1e-9) * step_size
             # Round to avoid floating point artifacts
             precision = info['quantity_precision']
             quantity = round(quantity, precision)

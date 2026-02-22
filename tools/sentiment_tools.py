@@ -56,32 +56,19 @@ def get_fear_greed_index() -> str:
 
                         current = entries[0]
                         value = int(current["value"])
-                        classification = current["value_classification"]
-
-                        # Historical context
-                        history = [
-                            {"value": int(e["value"]), "classification": e["value_classification"]}
-                            for e in entries[:7]
-                        ]
                         avg_7d = sum(int(e["value"]) for e in entries[:7]) / min(len(entries), 7)
 
                         result = {
-                            "current_value": value,
-                            "classification": classification,
-                            "7day_average": round(avg_7d, 1),
-                            "trend": (
-                                "IMPROVING" if value > avg_7d
-                                else "DETERIORATING" if value < avg_7d
-                                else "STABLE"
-                            ),
-                            "history_7d": history,
+                            "value": value,
+                            "avg_7d": round(avg_7d, 1),
+                            "trend": "UP" if value > avg_7d else "DOWN" if value < avg_7d else "FLAT",
                             "signal": (
                                 "CONTRARIAN_BUY" if value < 25
                                 else "CONTRARIAN_SELL" if value > 75
                                 else "NEUTRAL"
                             ),
                         }
-                        return json.dumps(result, indent=2)
+                        return json.dumps(result)
                     else:
                         return json.dumps({"error": f"API returned status {resp.status}"})
         except Exception as e:
@@ -129,49 +116,29 @@ def get_crypto_news(pair: str) -> str:
                         }
 
                         headlines = []
-                        for article in articles:
+                        for article in articles[:5]:  # Max 5 articles
                             api_sentiment = article.get("SENTIMENT", "NEUTRAL")
                             sentiment = _SENTIMENT_MAP.get(api_sentiment, "NEUTRAL")
-
-                            # Extract source name
-                            source_data = article.get("SOURCE_DATA", {})
-                            source_name = source_data.get("NAME", article.get("AUTHORS", "unknown"))
-
-                            # Extract categories
-                            categories = [
-                                c.get("NAME", "")
-                                for c in article.get("CATEGORY_DATA", [])
-                            ]
-
                             headlines.append({
-                                "title": article.get("TITLE", "")[:150],
-                                "source": source_name,
+                                "title": article.get("TITLE", "")[:80],
                                 "sentiment": sentiment,
-                                "api_sentiment": api_sentiment,
-                                "published": article.get("PUBLISHED_ON", 0),
-                                "categories": categories,
-                                "url": article.get("URL", ""),
                             })
 
                         bullish = sum(1 for h in headlines if h["sentiment"] == "BULLISH")
                         bearish = sum(1 for h in headlines if h["sentiment"] == "BEARISH")
-                        neutral = len(headlines) - bullish - bearish
 
                         result = {
                             "pair": pair,
-                            "news_count": len(headlines),
-                            "articles": headlines,
-                            "bullish_count": bullish,
-                            "bearish_count": bearish,
-                            "neutral_count": neutral,
-                            "overall_sentiment": (
-                                "BULLISH" if bullish > bearish + 2
-                                else "BEARISH" if bearish > bullish + 2
+                            "headlines": headlines,
+                            "bull": bullish,
+                            "bear": bearish,
+                            "bias": (
+                                "BULL" if bullish > bearish + 1
+                                else "BEAR" if bearish > bullish + 1
                                 else "MIXED"
                             ),
-                            "sentiment_source": "CoinDesk API (native)",
                         }
-                        return json.dumps(result, indent=2)
+                        return json.dumps(result)
                     else:
                         return json.dumps({"error": f"API returned status {resp.status}"})
         except Exception as e:
@@ -270,25 +237,20 @@ def get_derivatives_positioning(pair: str) -> str:
 
         result = {
             "pair": pair,
-            "open_interest": open_interest,
-            "long_short_ratio": {
-                "long_pct": round(long_ratio * 100, 1),
-                "short_pct": round(short_ratio * 100, 1),
-                "ratio": round(ls_ratio, 3),
-            },
-            "positioning_signal": (
+            "oi": open_interest,
+            "ls_ratio": round(ls_ratio, 3),
+            "signal": (
                 "CROWDED_LONGS" if ls_ratio > 1.5
                 else "CROWDED_SHORTS" if ls_ratio < 0.67
                 else "BALANCED"
             ),
             "squeeze_risk": (
-                "HIGH (long squeeze)" if ls_ratio > 2.0
-                else "HIGH (short squeeze)" if ls_ratio < 0.5
-                else "MODERATE" if ls_ratio > 1.5 or ls_ratio < 0.67
+                "HIGH" if ls_ratio > 2.0 or ls_ratio < 0.5
+                else "MOD" if ls_ratio > 1.5 or ls_ratio < 0.67
                 else "LOW"
             ),
         }
-        return json.dumps(result, indent=2)
+        return json.dumps(result)
 
     except Exception as e:
         logger.error(f"Error fetching derivatives data for {pair}: {e}")

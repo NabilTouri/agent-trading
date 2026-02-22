@@ -1,4 +1,5 @@
 import asyncio
+import math
 from loguru import logger
 from datetime import datetime
 import uuid
@@ -161,15 +162,6 @@ class ExecutionLoop:
                     f"(3% {'below' if position_side == 'LONG' else 'above'} entry)"
                 )
 
-            # Enforce Binance minimum notional (100 USDT)
-            MIN_NOTIONAL = 100.0
-            if position_size < MIN_NOTIONAL:
-                logger.warning(
-                    f"Position size ${position_size:.2f} below minimum notional "
-                    f"${MIN_NOTIONAL:.0f}, adjusting to minimum"
-                )
-                position_size = MIN_NOTIONAL
-
             # SLIPPAGE PROTECTION
             expected_price = signal.market_data.get('price')
             if expected_price and expected_price > 0:
@@ -187,13 +179,35 @@ class ExecutionLoop:
                     )
                     return
 
-            # Calculate quantity to buy
-            quantity = position_size / current_price
+            # Calculate quantity with min-notional-safe rounding
+            MIN_NOTIONAL = 100.0
+            symbol_clean = signal.pair.replace("/", "")
+            sym_info = exchange._symbol_info_cache.get(symbol_clean, {})
+            step_size = sym_info.get('step_size', 0.001)
+            qty_precision = sym_info.get('quantity_precision', 3)
+
+            raw_qty = position_size / current_price
+            # Round UP to nearest step_size so notional stays >= position_size
+            quantity = math.ceil(raw_qty / step_size) * step_size
+            quantity = round(quantity, qty_precision)
+
+            # Verify notional meets minimum; bump by one step if needed
+            notional = quantity * current_price
+            if notional < MIN_NOTIONAL:
+                quantity += step_size
+                quantity = round(quantity, qty_precision)
+                notional = quantity * current_price
+                logger.info(f"Bumped quantity to {quantity} (notional ${notional:.2f}) to meet min $100")
+
+            logger.info(
+                f"Order sizing: size=${position_size:.2f}, qty={quantity}, "
+                f"notional=${notional:.2f}, step={step_size}"
+            )
 
             # Side already determined above for stop_loss fallback
             side = "BUY" if signal.action == ActionType.BUY else "SELL"
 
-            # Place market order
+            # Place market order (pass pre-rounded quantity)
             order = exchange.place_market_order(signal.pair, side, quantity)
 
             if not order:

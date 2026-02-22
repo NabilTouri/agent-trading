@@ -49,108 +49,41 @@ class TradingCrew:
 
         task_market_analysis = Task(
             description=(
-                f"Perform a comprehensive market analysis for {self.pair}.\n\n"
-                f"Execute these steps IN ORDER:\n"
-                f"1. Fetch current price for {self.pair}\n"
-                f"2. Calculate technical indicators on the 1h timeframe\n"
-                f"3. Calculate technical indicators on the 4h timeframe\n"
-                f"4. Detect chart patterns\n"
-                f"5. Find key support and resistance zones\n"
-                f"6. Analyze volume profile\n"
-                f"7. Check orderbook for buy/sell pressure\n"
-                f"8. Check funding rate for positioning\n\n"
-                f"Based on ALL the data gathered, produce a detailed analysis with:\n"
-                f"- Overall trend direction and strength\n"
-                f"- Key technical signals (bullish/bearish)\n"
-                f"- Important support/resistance levels\n"
-                f"- Volume and orderbook confirmation\n"
-                f"- Your directional bias: LONG, SHORT, or NEUTRAL\n"
-                f"- Confidence level (0-100)\n"
-                f"- Suggested entry zone, stop loss level, and take profit targets"
+                f"Analyze {self.pair}. Use tools: calculate_indicators (1h only), "
+                f"detect_chart_patterns, find_support_resistance, get_orderbook, get_funding_rate. "
+                f"Output a SHORT JSON: bias (LONG/SHORT/NEUTRAL), confidence (0-100), "
+                f"key support/resistance, entry zone, stop loss, take profit."
             ),
             expected_output=(
-                "A detailed market analysis report in JSON format containing: "
-                "trend direction, key indicator values and signals, "
-                "support/resistance levels, volume analysis, "
-                "directional bias (LONG/SHORT/NEUTRAL), confidence (0-100), "
-                "and suggested entry/exit levels."
+                "Short JSON: bias, confidence, support, resistance, entry, stop_loss, take_profit."
             ),
             agent=self.market_agent,
         )
 
         task_sentiment = Task(
             description=(
-                f"Assess the market sentiment for {self.pair}.\n\n"
-                f"Execute these steps:\n"
-                f"1. Check the Crypto Fear & Greed Index\n"
-                f"2. Fetch and analyze recent crypto news for {self.pair}\n"
-                f"3. Check social media sentiment and momentum\n"
-                f"4. Analyze derivatives positioning (OI, long/short ratio)\n\n"
-                f"Your previous colleague (Market Analysis Agent) has provided "
-                f"a technical analysis. Consider whether sentiment ALIGNS with "
-                f"or DIVERGES from the technical bias.\n\n"
-                f"Produce a sentiment report with:\n"
-                f"- Overall sentiment score and direction\n"
-                f"- Key catalysts (positive or negative)\n"
-                f"- Derivatives positioning and squeeze risk\n"
-                f"- Alignment/divergence with technical analysis\n"
-                f"- Sentiment-adjusted confidence modifier"
+                f"Assess sentiment for {self.pair}. Use tools: get_fear_greed_index, "
+                f"get_crypto_news, get_derivatives_positioning. Skip social_sentiment. "
+                f"Output SHORT JSON: sentiment (BULL/BEAR/NEUTRAL), "
+                f"aligns_with_technical (true/false), key_catalyst, squeeze_risk."
             ),
             expected_output=(
-                "A sentiment analysis report in JSON format containing: "
-                "overall sentiment (BULLISH/BEARISH/NEUTRAL), "
-                "fear & greed reading, news sentiment summary, "
-                "derivatives positioning, squeeze risk, "
-                "and alignment with technical analysis."
+                "Short JSON: sentiment, aligns_with_technical, key_catalyst, squeeze_risk."
             ),
             agent=self.sentiment_agent,
         )
 
         task_trading_ops = Task(
             description=(
-                f"Make the FINAL trade decision for {self.pair}.\n\n"
-                f"You have received reports from:\n"
-                f"- Market Analysis Agent (technical analysis, entry/exit levels)\n"
-                f"- Sentiment Agent (sentiment alignment, positioning)\n\n"
-                f"Execute these steps:\n"
-                f"1. Check current portfolio state (balance, positions, exposure)\n"
-                f"2. If both agents suggest a directional trade, calculate position size "
-                f"using Kelly Criterion based on historical performance\n"
-                f"3. Calculate Value at Risk for the proposed position\n"
-                f"4. Check correlation with any existing positions\n"
-                f"5. Estimate expected slippage\n"
-                f"6. Analyze market depth for execution feasibility\n\n"
-                f"APPROVAL CRITERIA — ALL must be met:\n"
-                f"- Confidence ≥ {settings.min_confidence}\n"
-                f"- Risk:Reward ≥ {settings.min_rr_ratio}\n"
-                f"- Stop loss distance ≤ {settings.max_sl_distance_pct}%\n"
-                f"- Spread ≤ {settings.max_spread_bps} bps\n"
-                f"- Slippage ≤ {settings.max_slippage_pct}%\n"
-                f"- Available position slots\n"
-                f"- Portfolio exposure within limits\n\n"
-                f"Output a JSON object with this exact structure:\n"
-                f'{{"decision": "APPROVED" or "REJECTED", '
-                f'"pair": "{self.pair}", '
-                f'"direction": "LONG" or "SHORT", '
-                f'"confidence": <0-100>, '
-                f'"position_size_usd": <amount>, '
-                f'"position_size_pct": <percentage of balance>, '
-                f'"entry": {{"method": "MARKET" or "LIMIT", "price": <price>, '
-                f'"orders": [{{"price": <p>, "size": <s>}}]}}, '
-                f'"stop_loss": {{"price": <p>, "pct": <distance%>, '
-                f'"type": "STOP_LIMIT" or "STOP_MARKET"}}, '
-                f'"take_profit": [{{"level": 1, "price": <p>, "size_pct": <50>}}, '
-                f'{{"level": 2, "price": <p>, "size_pct": <50>}}], '
-                f'"risk_reward_ratio": <ratio>, '
-                f'"reasoning": "<explanation>", '
-                f'"market_analysis_summary": "<brief summary>", '
-                f'"sentiment_summary": "<brief summary>"}}'
+                f"Final decision for {self.pair}. Use tools: get_portfolio_state, estimate_slippage. "
+                f"Only use calculate_kelly and calculate_var if APPROVING a trade. "
+                f"REJECT if confidence < {settings.min_confidence} or RR < {settings.min_rr_ratio}. "
+                f"Output JSON: decision, pair, direction, confidence, position_size_usd, "
+                f"position_size_pct, entry (method+price), stop_loss (price+pct+type), "
+                f"take_profit (array), risk_reward_ratio, reasoning."
             ),
             expected_output=(
-                "A JSON object conforming to the TradeDecision schema with "
-                "decision (APPROVED/REJECTED), pair, direction, confidence, "
-                "position sizing, entry plan, stop loss, take profit levels, "
-                "risk/reward ratio, and reasoning."
+                "JSON: decision, pair, direction, confidence, sizing, entry, SL, TP, RR, reasoning."
             ),
             agent=self.trading_ops_agent,
             output_json=TradeDecision,
@@ -167,6 +100,13 @@ class TradingCrew:
             tasks=tasks,
             process=Process.sequential,
             memory=True,
+            embedder={
+                "provider": "sentence-transformer",
+                "config": {
+                    "model_name": "all-MiniLM-L6-v2",
+                    "device": "cpu",
+                },
+            },
             verbose=settings.crew_verbose,
         )
 

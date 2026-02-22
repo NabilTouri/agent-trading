@@ -11,13 +11,11 @@ from tools.market_data import (
     get_orderbook,
     get_funding_rate,
     get_klines,
-    get_current_price,
 )
 from tools.technical_analysis import (
     calculate_indicators,
     detect_chart_patterns,
     find_support_resistance,
-    analyze_volume_profile,
 )
 
 
@@ -39,38 +37,21 @@ def create_market_analysis_agent(llm: str) -> Agent:
         CrewAI Agent configured for market analysis
     """
     return Agent(
-        role="Senior Quantitative Market Analyst",
-        goal=(
-            "Produce a complete quantitative market analysis for the given trading pair. "
-            "Your analysis must include: 1) Market structure (trend direction, strength), "
-            "2) Multi-timeframe technical indicators with clear signals, "
-            "3) Key support/resistance zones, 4) Volume profile analysis, "
-            "5) Orderbook and funding rate sentiment, "
-            "6) A clear directional bias (LONG, SHORT, or NEUTRAL) with confidence level."
-        ),
-        backstory=(
-            "You are a senior quantitative analyst with 15 years of experience in "
-            "cryptocurrency derivatives markets. You combine on-chain data, orderbook "
-            "analysis, and multi-timeframe technical analysis to build a unified "
-            "quantitative view of the market. You are known for your disciplined "
-            "approach: you never force a trade when the data is ambiguous, and you "
-            "always clearly state your confidence level. Your analysis drives the "
-            "first step of a 3-agent trading system."
-        ),
+        role="Market Analyst",
+        goal="Analyze the trading pair technically. Output SHORT JSON with bias, confidence, key levels.",
+        backstory="Senior quant analyst for crypto derivatives. Disciplined, data-driven, never forces trades.",
         llm=llm,
         tools=[
             get_orderbook,
             get_funding_rate,
             get_klines,
-            get_current_price,
             calculate_indicators,
             detect_chart_patterns,
             find_support_resistance,
-            analyze_volume_profile,
         ],
         verbose=False,
         allow_delegation=False,
-        max_iter=10,
+        max_iter=6,
         max_retry_limit=2,
         respect_context_window=True,
         use_system_prompt=True,

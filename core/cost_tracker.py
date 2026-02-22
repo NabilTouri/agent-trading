@@ -59,18 +59,24 @@ class CostTracker:
             self._db = db
         return self._db
 
-    def log_usage(self, usage_metrics: Dict[str, Any], pair: str = "") -> UsageRecord:
+    def log_usage(self, usage_metrics: Any, pair: str = "") -> UsageRecord:
         """
         Log token usage from a CrewAI kickoff.
         
         Args:
-            usage_metrics: Dict with 'total_tokens', 'prompt_tokens', 'completion_tokens'
+            usage_metrics: UsageMetrics pydantic model or dict with token counts
                           as returned by crew.usage_metrics
             pair: Trading pair this analysis was for
         
         Returns:
             UsageRecord with calculated cost
         """
+        # Convert Pydantic model to dict if needed
+        if hasattr(usage_metrics, 'model_dump'):
+            usage_metrics = usage_metrics.model_dump()
+        elif not isinstance(usage_metrics, dict):
+            usage_metrics = vars(usage_metrics) if hasattr(usage_metrics, '__dict__') else {}
+
         record = UsageRecord(
             timestamp=datetime.now(),
             input_tokens=usage_metrics.get("prompt_tokens", 0),

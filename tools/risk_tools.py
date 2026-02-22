@@ -56,37 +56,21 @@ def get_portfolio_state() -> str:
             drawdown = ((initial_capital - balance) / initial_capital) * 100
 
         result = {
-            "balance_usd": round(balance, 2),
-            "initial_capital": round(initial_capital, 2),
-            "open_positions": len(positions),
-            "max_positions": s.max_positions,
-            "positions_detail": [
-                {
-                    "pair": p.pair,
-                    "side": p.side,
-                    "size_usd": round(p.size, 2),
-                    "entry_price": round(p.entry_price, 2),
-                    "stop_loss": round(p.stop_loss, 2),
-                }
+            "balance": round(balance, 2),
+            "positions": len(positions),
+            "max_pos": s.max_positions,
+            "pos_detail": [
+                {"pair": p.pair, "side": p.side, "size": round(p.size, 2), "entry": round(p.entry_price, 2)}
                 for p in positions
             ],
-            "total_exposure_usd": round(total_exposure, 2),
             "exposure_pct": round(exposure_pct, 2),
-            "max_exposure_pct": s.max_capital_in_positions_pct * 100,
             "drawdown_pct": round(drawdown, 2),
-            "max_drawdown_pct": s.max_drawdown * 100,
-            "performance": {
-                "total_trades": metrics["total_trades"],
-                "win_rate": metrics["win_rate"],
-                "avg_profit": metrics["avg_profit"],
-                "avg_loss": metrics["avg_loss"],
-                "profit_factor": metrics["profit_factor"],
-                "total_pnl": metrics["total_pnl"],
-            },
-            "risk_per_trade_pct": s.risk_per_trade * 100,
-            "can_open_new_position": len(positions) < s.max_positions,
+            "win_rate": metrics["win_rate"],
+            "total_pnl": metrics["total_pnl"],
+            "can_open": len(positions) < s.max_positions,
+            "risk_pct": s.risk_per_trade * 100,
         }
-        return json.dumps(result, indent=2)
+        return json.dumps(result)
 
     except Exception as e:
         logger.error(f"Error fetching portfolio state: {e}")
@@ -141,18 +125,11 @@ def calculate_kelly_position_size(
         capped_usd = balance * effective_pct
 
         result = {
-            "win_rate": round(p, 4),
-            "win_loss_ratio": round(b, 4),
-            "full_kelly_fraction": round(kelly_fraction, 4),
-            "full_kelly_usd": round(full_kelly_usd, 2),
-            "half_kelly_fraction": round(half_kelly, 4),
-            "half_kelly_usd": round(half_kelly_usd, 2),
-            "capped_fraction": round(effective_pct, 4),
-            "capped_usd": round(capped_usd, 2),
-            "max_allowed_pct": round(max_pct * 100, 2),
-            "recommendation": f"Use ${capped_usd:.2f} ({effective_pct*100:.2f}% of balance)",
+            "half_kelly_pct": round(half_kelly * 100, 2),
+            "capped_pct": round(effective_pct * 100, 2),
+            "size_usd": round(capped_usd, 2),
         }
-        return json.dumps(result, indent=2)
+        return json.dumps(result)
 
     except Exception as e:
         logger.error(f"Error calculating Kelly: {e}")
@@ -216,23 +193,12 @@ def calculate_var(pair: str, position_size: float, confidence: float = 0.95) -> 
 
         result = {
             "pair": pair,
-            "position_size_usd": round(position_size, 2),
-            "confidence_level": confidence,
-            "var_1day_usd": round(var_usd, 2),
-            "var_1day_pct": round(var_pct, 2),
-            "cvar_1day_usd": round(cvar_usd, 2),
-            "interpretation": (
-                f"At {confidence*100:.0f}% confidence, the maximum expected 1-day loss "
-                f"is ${var_usd:.2f} ({var_pct:.2f}%). "
-                f"Average loss in worst scenarios: ${cvar_usd:.2f}."
-            ),
-            "risk_rating": (
-                "HIGH" if var_pct > 5
-                else "MODERATE" if var_pct > 2
-                else "LOW"
-            ),
+            "var_pct": round(var_pct, 2),
+            "var_usd": round(var_usd, 2),
+            "cvar_usd": round(cvar_usd, 2),
+            "risk": "HIGH" if var_pct > 5 else "MOD" if var_pct > 2 else "LOW",
         }
-        return json.dumps(result, indent=2)
+        return json.dumps(result)
 
     except Exception as e:
         logger.error(f"Error calculating VaR for {pair}: {e}")
@@ -292,15 +258,10 @@ def check_portfolio_correlation(pair: str) -> str:
 
         result = {
             "pair": pair,
-            "correlations": correlations,
-            "max_absolute_correlation": round(max_corr, 4),
-            "correlation_risk": (
-                "HIGH — consider reducing size" if max_corr > 0.7
-                else "MODERATE" if max_corr > 0.4
-                else "LOW — good diversification"
-            ),
+            "max_corr": round(max_corr, 4),
+            "risk": "HIGH" if max_corr > 0.7 else "MOD" if max_corr > 0.4 else "LOW",
         }
-        return json.dumps(result, indent=2)
+        return json.dumps(result)
 
     except Exception as e:
         logger.error(f"Error checking correlation for {pair}: {e}")
@@ -354,23 +315,12 @@ def estimate_slippage(pair: str, order_size_usd: float) -> str:
 
         result = {
             "pair": pair,
-            "order_size_usd": round(order_size_usd, 2),
-            "current_price": round(current_price, 2),
-            "estimated_fill_price": round(avg_fill_price, 2),
-            "slippage_pct": round(slippage_pct, 4),
-            "slippage_bps": round(slippage_bps, 2),
-            "slippage_usd": round(slippage_usd, 4),
+            "slip_bps": round(slippage_bps, 2),
             "spread_bps": round(spread_bps, 2),
             "spread_ok": spread_bps < s.max_spread_bps,
-            "slippage_ok": slippage_pct < s.max_slippage_pct,
-            "execution_quality": (
-                "EXCELLENT" if slippage_bps < 2
-                else "GOOD" if slippage_bps < 5
-                else "FAIR" if slippage_bps < 10
-                else "POOR"
-            ),
+            "slip_ok": slippage_pct < s.max_slippage_pct,
         }
-        return json.dumps(result, indent=2)
+        return json.dumps(result)
 
     except Exception as e:
         logger.error(f"Error estimating slippage for {pair}: {e}")
@@ -416,18 +366,12 @@ def analyze_market_depth(pair: str) -> str:
 
         result = {
             "pair": pair,
-            "current_price": round(current_price, 2),
-            "depth_by_level": depth_analysis,
-            "total_bid_depth_usd": round(total_bid, 2),
-            "total_ask_depth_usd": round(total_ask, 2),
-            "bid_ask_ratio": round(total_bid / total_ask, 4) if total_ask > 0 else 0,
-            "liquidity_assessment": (
-                "HIGH" if total_bid + total_ask > 1_000_000
-                else "MODERATE" if total_bid + total_ask > 100_000
-                else "LOW"
-            ),
+            "bid_depth": round(total_bid, 0),
+            "ask_depth": round(total_ask, 0),
+            "ratio": round(total_bid / total_ask, 2) if total_ask > 0 else 0,
+            "liquidity": "HIGH" if total_bid + total_ask > 1_000_000 else "MOD" if total_bid + total_ask > 100_000 else "LOW",
         }
-        return json.dumps(result, indent=2)
+        return json.dumps(result)
 
     except Exception as e:
         logger.error(f"Error analyzing market depth for {pair}: {e}")

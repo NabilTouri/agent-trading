@@ -46,18 +46,18 @@ def get_orderbook(pair: str) -> str:
 
         result = {
             "pair": pair,
-            "top_bids": bids[:5],
-            "top_asks": asks[:5],
-            "bid_volume_total": round(bid_volume, 4),
-            "ask_volume_total": round(ask_volume, 4),
+            "best_bid": bids[0]["price"] if bids else 0,
+            "best_ask": asks[0]["price"] if asks else 0,
+            "bid_vol": round(bid_volume, 2),
+            "ask_vol": round(ask_volume, 2),
             "imbalance_pct": round(imbalance, 2),
-            "interpretation": (
-                "Strong buy pressure" if imbalance > 20
-                else "Strong sell pressure" if imbalance < -20
-                else "Relatively balanced"
+            "signal": (
+                "BUY_PRESSURE" if imbalance > 20
+                else "SELL_PRESSURE" if imbalance < -20
+                else "BALANCED"
             ),
         }
-        return json.dumps(result, indent=2)
+        return json.dumps(result)
 
     except Exception as e:
         logger.error(f"Error fetching orderbook for {pair}: {e}")
@@ -87,19 +87,17 @@ def get_funding_rate(pair: str) -> str:
 
         result = {
             "pair": pair,
-            "current_rate": round(current * 100, 4),  # as percentage
-            "previous_rates": [round(r * 100, 4) for r in previous],
-            "average_recent": round(avg_recent * 100, 4),
-            "annualized_pct": round(current * 100 * 3 * 365, 2),  # 8h intervals
-            "interpretation": (
-                "Extremely bullish positioning (crowded longs)" if current > 0.001
-                else "Moderately bullish" if current > 0.0001
-                else "Extremely bearish positioning (crowded shorts)" if current < -0.001
-                else "Moderately bearish" if current < -0.0001
-                else "Neutral funding"
+            "rate_pct": round(current * 100, 4),
+            "annualized_pct": round(current * 100 * 3 * 365, 2),
+            "signal": (
+                "CROWDED_LONGS" if current > 0.001
+                else "BULLISH" if current > 0.0001
+                else "CROWDED_SHORTS" if current < -0.001
+                else "BEARISH" if current < -0.0001
+                else "NEUTRAL"
             ),
         }
-        return json.dumps(result, indent=2)
+        return json.dumps(result)
 
     except Exception as e:
         logger.error(f"Error fetching funding rate for {pair}: {e}")
@@ -121,36 +119,29 @@ def get_klines(pair: str, interval: str = "1h", limit: int = 50) -> str:
         if not candles:
             return json.dumps({"pair": pair, "interval": interval, "candles": []})
 
-        # Summarize: last 10 candles in detail, rest as statistics
-        recent = candles[-10:]
-        formatted = []
-        for c in recent:
-            formatted.append({
-                "open": round(c["open"], 2),
-                "high": round(c["high"], 2),
-                "low": round(c["low"], 2),
-                "close": round(c["close"], 2),
-                "volume": round(c["volume"], 2),
-            })
-
-        # Calculate summary stats for older candles
+        # Summary stats only — no individual candles to save tokens
         all_closes = [c["close"] for c in candles]
         all_highs = [c["high"] for c in candles]
         all_lows = [c["low"] for c in candles]
+        all_vols = [c["volume"] for c in candles]
+
+        # Last 3 closes for recent direction
+        last3 = all_closes[-3:]
 
         result = {
             "pair": pair,
             "interval": interval,
-            "total_candles": len(candles),
-            "recent_candles": formatted,
-            "period_high": round(max(all_highs), 2),
-            "period_low": round(min(all_lows), 2),
-            "current_close": round(all_closes[-1], 2),
-            "price_range_pct": round(
+            "candles": len(candles),
+            "current": round(all_closes[-1], 2),
+            "high": round(max(all_highs), 2),
+            "low": round(min(all_lows), 2),
+            "last3_closes": [round(c, 2) for c in last3],
+            "avg_vol": round(sum(all_vols) / len(all_vols), 2),
+            "range_pct": round(
                 ((max(all_highs) - min(all_lows)) / min(all_lows)) * 100, 2
             ) if min(all_lows) > 0 else 0,
         }
-        return json.dumps(result, indent=2)
+        return json.dumps(result)
 
     except Exception as e:
         logger.error(f"Error fetching klines for {pair}: {e}")

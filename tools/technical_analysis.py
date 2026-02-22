@@ -80,61 +80,35 @@ def calculate_indicators(pair: str, timeframe: str = "1h") -> str:
         def _safe(v):
             return round(float(v), 4) if pd.notna(v) else None
 
+        # Compact result — pre-interpreted signals to minimize tokens
+        trend = (
+            "STRONG_UP" if ema_200 and current_price > ema_20 > ema_50 > ema_200
+            else "UP" if (current_price > ema_50 > ema_200 if ema_200 else current_price > ema_50)
+            else "STRONG_DOWN" if ema_200 and current_price < ema_20 < ema_50 < ema_200
+            else "DOWN" if current_price < ema_50
+            else "SIDEWAYS"
+        )
+
         result = {
             "pair": pair,
-            "timeframe": timeframe,
-            "current_price": _safe(current_price),
+            "tf": timeframe,
+            "price": _safe(current_price),
             "rsi": _safe(rsi),
-            "rsi_signal": (
-                "OVERSOLD" if rsi and rsi < 30
-                else "OVERBOUGHT" if rsi and rsi > 70
-                else "NEUTRAL"
-            ),
-            "macd": {"value": _safe(macd), "signal": _safe(macd_signal), "histogram": _safe(macd_hist)},
-            "macd_signal": (
-                "BULLISH" if macd_hist and macd_hist > 0
-                else "BEARISH"
-            ),
-            "bollinger_bands": {
-                "upper": _safe(bb_upper),
-                "middle": _safe(bb_mid),
-                "lower": _safe(bb_lower),
-                "width_pct": _safe(bb_width),
-            },
-            "bb_position": (
-                "ABOVE_UPPER" if current_price > bb_upper
-                else "BELOW_LOWER" if current_price < bb_lower
-                else "IN_RANGE"
-            ),
-            "atr": _safe(atr),
+            "rsi_sig": "OVERSOLD" if rsi and rsi < 30 else "OVERBOUGHT" if rsi and rsi > 70 else "NEUTRAL",
+            "macd_hist": _safe(macd_hist),
+            "macd_sig": "BULL" if macd_hist and macd_hist > 0 else "BEAR",
+            "bb_width": _safe(bb_width),
+            "bb_pos": "ABOVE" if current_price > bb_upper else "BELOW" if current_price < bb_lower else "IN",
             "atr_pct": _safe((atr / current_price * 100) if current_price > 0 else 0),
-            "ema": {
-                "ema_20": _safe(ema_20),
-                "ema_50": _safe(ema_50),
-                "ema_200": _safe(ema_200),
-            },
-            "trend": (
-                "STRONG_UPTREND" if ema_200 and current_price > ema_20 > ema_50 > ema_200
-                else "UPTREND" if (current_price > ema_50 > ema_200 if ema_200 else current_price > ema_50)
-                else "STRONG_DOWNTREND" if ema_200 and current_price < ema_20 < ema_50 < ema_200
-                else "DOWNTREND" if current_price < ema_50
-                else "SIDEWAYS"
-            ),
-            "stochastic": {"k": _safe(stoch_k), "d": _safe(stoch_d)},
+            "ema20": _safe(ema_20),
+            "ema50": _safe(ema_50),
+            "ema200": _safe(ema_200),
+            "trend": trend,
             "adx": _safe(adx),
-            "trend_strength": (
-                "STRONG" if adx and adx > 25
-                else "WEAK" if adx and adx < 20
-                else "MODERATE"
-            ),
-            "volume_ratio": _safe(vol_ratio),
-            "volume_signal": (
-                "HIGH_VOLUME" if vol_ratio > 1.5
-                else "LOW_VOLUME" if vol_ratio < 0.5
-                else "NORMAL"
-            ),
+            "trend_str": "STRONG" if adx and adx > 25 else "WEAK" if adx and adx < 20 else "MOD",
+            "vol_ratio": _safe(vol_ratio),
         }
-        return json.dumps(result, indent=2)
+        return json.dumps(result)
 
     except Exception as e:
         logger.error(f"Error calculating indicators for {pair}: {e}")
@@ -218,19 +192,15 @@ def detect_chart_patterns(pair: str) -> str:
         if last["high"] < prev["high"] and last["low"] > prev["low"]:
             patterns.append({"pattern": "INSIDE_BAR", "significance": "NEUTRAL (breakout pending)"})
 
+        bull = sum(1 for p in patterns if p["significance"] == "BULLISH")
+        bear = sum(1 for p in patterns if p["significance"] == "BEARISH")
+        # Compact: only pattern names and overall bias
         result = {
             "pair": pair,
-            "patterns_found": len(patterns),
-            "patterns": patterns,
-            "overall_bias": (
-                "BULLISH" if sum(1 for p in patterns if p["significance"] == "BULLISH") >
-                             sum(1 for p in patterns if p["significance"] == "BEARISH")
-                else "BEARISH" if sum(1 for p in patterns if p["significance"] == "BEARISH") >
-                                  sum(1 for p in patterns if p["significance"] == "BULLISH")
-                else "NEUTRAL"
-            ),
+            "patterns": [p["pattern"] for p in patterns],
+            "bias": "BULL" if bull > bear else "BEAR" if bear > bull else "NEUTRAL",
         }
-        return json.dumps(result, indent=2)
+        return json.dumps(result)
 
     except Exception as e:
         logger.error(f"Error detecting patterns for {pair}: {e}")
@@ -284,23 +254,16 @@ def find_support_resistance(pair: str) -> str:
 
         current = float(ex.get_current_price(pair))
 
+        supports = sorted([z for z in clustered if z["price"] < current], key=lambda z: z["strength"], reverse=True)[:3]
+        resistances = sorted([z for z in clustered if z["price"] > current], key=lambda z: z["strength"], reverse=True)[:3]
+
         result = {
             "pair": pair,
-            "current_price": current,
-            "support_zones": [z for z in clustered if z["price"] < current][:5],
-            "resistance_zones": [z for z in clustered if z["price"] > current][:5],
-            "nearest_support": min(
-                [z for z in clustered if z["price"] < current],
-                key=lambda z: current - z["price"],
-                default=None,
-            ),
-            "nearest_resistance": min(
-                [z for z in clustered if z["price"] > current],
-                key=lambda z: z["price"] - current,
-                default=None,
-            ),
+            "price": current,
+            "support": [z["price"] for z in supports],
+            "resistance": [z["price"] for z in resistances],
         }
-        return json.dumps(result, indent=2)
+        return json.dumps(result)
 
     except Exception as e:
         logger.error(f"Error finding S/R for {pair}: {e}")
@@ -413,20 +376,13 @@ def analyze_volume_profile(pair: str) -> str:
 
         result = {
             "pair": pair,
-            "current_price": round(float(current_price), 2),
-            "point_of_control": round(float(poc_price), 2),
-            "value_area_high": round(float(va_high), 2),
-            "value_area_low": round(float(va_low), 2),
-            "high_volume_nodes": hvn[:5],
-            "low_volume_nodes": lvn[:5],
-            "price_vs_poc": (
-                "ABOVE_POC" if current_price > poc_price
-                else "BELOW_POC" if current_price < poc_price
-                else "AT_POC"
-            ),
-            "price_in_value_area": va_low <= current_price <= va_high,
+            "poc": round(float(poc_price), 2),
+            "va_high": round(float(va_high), 2),
+            "va_low": round(float(va_low), 2),
+            "in_va": bool(va_low <= current_price <= va_high),
+            "vs_poc": "ABOVE" if current_price > poc_price else "BELOW",
         }
-        return json.dumps(result, indent=2)
+        return json.dumps(result)
 
     except Exception as e:
         logger.error(f"Error analyzing volume profile for {pair}: {e}")

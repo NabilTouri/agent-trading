@@ -1,0 +1,43 @@
+# Version control
+.git/
+.gitignore
+.gitattributes
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Node.js (Dashboard has its own Dockerfile)
+dashboard/node_modules/
+dashboard/.next/
+
+# Logs & backups
+logs/
+backups/
+
+# Docker
+.docker/
+docker-compose.yml
+Dockerfile
+
+# Docs
+docs/
+README.md
+
+# Environment
+.env
+.env.local
+.env.example
